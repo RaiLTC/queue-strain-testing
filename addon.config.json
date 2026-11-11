@@ -1,0 +1,7 @@
+{
+  "name": "Queue Strain",
+  "license": "AGPL-3.0-only",
+  "entry": "src/index.js",
+  "outfile": "dist/queue-strain.js",
+  "gameVersion": "1.4.3.0"
+}

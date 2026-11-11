@@ -1,0 +1,97 @@
+<!doctype html><html><body style="background:#1b1b24; margin:0; height:100vh;">
+<style>html.custom-cursor, html.custom-cursor * { cursor: none !important; }</style>
+<script>document.documentElement.classList.add("custom-cursor");</script>
+<div style="position:fixed; bottom:0; left:0; right:0; height:40px; background:#111; color:#888; font:12px sans-serif; padding:10px;">
+  dock: <span class="dock__source" id="dock">Playlist</span> <span class="dock__transport" id="transport">▶</span>
+</div>
+<script type="module">
+// --- a fake game: dock with a queue, a character database, and the API ---
+const mapsMeta = {
+  101: { title: 'Laundry', artist: 'shikiura sougo', version: 'Normal x1.2', len: 98000, hard: 0.05 },
+  102: { title: 'Wer ist Faust?', artist: 'Unlucky Morpheus', version: 'Schwer x1.2', len: 186000, hard: 0.35 },
+  103: { title: '10Dollar Dump Dump Revolutions 2 part.3', artist: 'Various Artists', version: '26 x1.2', len: 86000, hard: 0.95 },
+  105: { title: 'DJ Mashiro is dead or alive (Game Ver.)', artist: 'Ice', version: 'SV', len: 162000, hard: 0.02, sv: true },
+  106: { title: 'Second SV map', artist: 'Test', version: 'SV', len: 140000, hard: 0.02, sv: true },
+  107: { title: 'Third SV map', artist: 'Test', version: 'SV', len: 120000, hard: 0.02, sv: true },
+  108: { title: 'Fourth SV map', artist: 'Test', version: 'SV', len: 150000, hard: 0.02, sv: true },
+  104: { title: 'Drown Into Perdition', artist: 'Necrosy', version: "hi19hi19's Hard x1.1", len: 186000, hard: 0.9 },
+};
+const entry = (id, repeat, played, rate) => ({ repeat, played, beatmap: { metadata: { id, version: mapsMeta[id].version, total_length: mapsMeta[id].len }, set: { metadata: { title: mapsMeta[id].title, artist: mapsMeta[id].artist } }, lockedRate: rate, lockedMods: rate ? [] : undefined } });
+window.setQueue = (entries) => {
+  const hook2 = { memoizedState: { current: { label: 'farm', mode: 'PLAYLIST', entries }, previous: undefined }, next: null };
+  const hook1 = { memoizedState: 0, next: hook2 };
+  const fiber = { memoizedState: null, return: { memoizedState: hook1, return: null } };
+  document.getElementById('dock')['__reactFiber$abc'] = fiber;
+  document.getElementById('transport')['__reactFiber$abc'] = fiber;
+};
+// Edit Queue open: the game drops the source line from the dock, the controls stay
+window.editQueue = (on) => { document.getElementById('dock').className = on ? '' : 'dock__source'; };
+window.entry = entry;
+window.setQueue([entry(101, 2, 1, 1.2), entry(102, 1, 0, 1.2), entry(103, 1, 0, 1.2), entry(104, 1, 0, 1.1), entry(105, 3, 0, 1.0)]);
+
+const character = { id: 7, name: 'Rai', generation: 3, staminaUpgrades: 11, memoryResetAt: 0, memoryForgetAt: '[]',
+  geneticsJson: JSON.stringify({ picks: [{ skill: 'jackspeed' }], genes: { longSets: 2 } }), current: 1 };
+for (const s of ['accuracy','speed','stamina','jackspeed','coordination','release','reading','consistency','concentration','speedjam','memory']) { character[s] = 101; character[`${s}XP`] = 4e6; character[`${s}Upgrades`] = 10; character[`${s}Prestige`] = 2; }
+window.character = character;
+window.addPlay = (beatmapId, speed) => { window.realPlays.unshift({ playedAt: Date.now(), beatmapId, rate: 1.2, mods: '', accuracy: 0.99, pp: 255, gains: { speed, stamina: 6100 } }); };
+window.db = { read: async (fn) => fn({ exec: (sql, params) => {
+  if (/FROM character/.test(sql)) return [{ columns: Object.keys(character), values: [Object.values(character)] }];
+  if (/SELECT playedAt, beatmapId FROM score/.test(sql)) { const rows = (window.recentScores || []).filter(x => x.at >= params[1]); return rows.length ? [{ columns: ['playedAt', 'beatmapId'], values: rows.map(x => [x.at, x.id]) }] : []; }
+  if (/FROM score WHERE/.test(sql)) return [{ columns: ['playedAt'], values: [[Date.now() - 3600e3], [Date.now() - 7200e3]] }];
+  if (/FROM memory_fail/.test(sql)) return [];
+  // made-up real plays, as the game stores them: three of the 10Dollar map (103), one of Drown Into Perdition (104)
+  if (/FROM score_xp/.test(sql)) {
+    if (window.noRealPlays) return [];
+    window.realPlays = window.realPlays || (() => { const H = 3600e3, now = Date.now(); return [
+      { playedAt: now - 1 * H, beatmapId: 103, rate: 1.2, mods: '', accuracy: 0.9862, pp: 250, gains: { speed: 49023, stamina: 6000, consistency: 1000 } },
+      { playedAt: now - 2 * H, beatmapId: 103, rate: 1.2, mods: '', accuracy: 0.9841, pp: 247, gains: { speed: 47000, stamina: 5800, consistency: 1050 } },
+      { playedAt: now - 3 * H, beatmapId: 104, rate: 1.1, mods: '', accuracy: 0.9964, pp: 261, gains: { speed: 110000, stamina: 13800 } },
+      { playedAt: now - 5 * H, beatmapId: 103, rate: 1.2, mods: '', accuracy: 0.9795, pp: 240, gains: { speed: 50100, stamina: 6300, consistency: 990 } },
+    ]; })();
+    const real = [...window.realPlays].sort((a, b) => b.playedAt - a.playedAt);
+    const pick = /x\.beatmapId = \?/.test(sql) ? real.filter(x => x.beatmapId === params[1]) : real;
+    const cols = ['playedAt', 'beatmapId', 'gains', 'rate', 'mods', 'accuracy', 'pp'];
+    return pick.length ? [{ columns: cols, values: pick.map(x => cols.map(c => c === 'gains' ? JSON.stringify(x.gains) : x[c])) }] : [];
+  }
+  return [];
+} }) };
+localStorage.setItem('autopilotDelay', '3');
+// the last day's plays: map 103 eight times, 102 twice (mindblock)
+window.recentScores = Array.from({ length: 10 }, (_, i) => ({ at: Date.now() - (10 - i) * 600e3, id: i < 8 ? 103 : 102 }));
+// the medals endpoint: 40 gold, 10 platinum and one unknown medal
+window.medalIds = [...['pass-5','pass-6','fc-5','fc-6','grade-x','rice','ln','plays-5k','hits-10m','time-1000h'], ...['speed','stamina','jackspeed','coordination','release','reading','consistency','concentration','speedjam','memory','accuracy'].map(s => s + '-100'), ...['speed','stamina','jackspeed','coordination','release','reading','consistency','concentration','speedjam','memory'].map(s => s + '-50'), 'brand-new-medal'];
+window.serverTries = { 105: 6, 103: 40 };
+window.serverGenetics = { picks: [{ skill: 'speed' }, { skill: 'speed' }, { skill: 'stamina' }], genes: { adrenaline: 5, quickFingers: 3, pacing: 2, longSets: 5, marathoner: 3 }, converted: {}, fees: {} };
+const realFetch = window.fetch;
+window.fetch = async (url, o) => {
+  const mem = String(url).match(/\/v1\/me\/memory\/(\d+)/);
+  if (mem) {
+    window.triesCalls = (window.triesCalls || 0) + 1;
+    if (window.triesDown) throw new Error('offline');
+    return { ok: true, status: 200, json: async () => ({ plays: (window.serverTries || {})[mem[1]] ?? 0 }) };
+  }
+  if (String(url).endsWith('/v1/me/characters')) {
+    if (window.charsDown) throw new Error('offline');
+    return { ok: true, status: 200, json: async () => [{ id: 3, genetics: { picks: [], genes: {} } }, { id: 7, genetics: window.serverGenetics }] };
+  }
+  if (String(url).includes('/v1/characters/')) {
+    window.medalCalls = (window.medalCalls || 0) + 1;
+    if (window.medalsDown) throw new Error('offline');
+    return { ok: true, json: async () => ({ held: window.medalIds.map(id => ({ id })) }) };
+  }
+  return realFetch(url, o);
+};
+window.simCalls = [];
+window.apiFatigue = 9;
+const api = {
+  me: async () => ({ character_id: 7, fatigue: { minutes: window.apiFatigue, level: 0 }, warmup: { level: 0.79, bar: window.apiBar ?? 0.3 } }),
+  // a map strains for a share of its length set by how hard it is, a little less when tired
+  simulate: async (b) => { if (window.busyLeft > 0) { window.busyLeft--; window.busyHits = (window.busyHits || 0) + 1; throw new Error(window.busyError || 'Every simulation server is busy, try again soon'); } window.simCalls.push(b); if (window.slow) await new Promise(r => setTimeout(r, 40)); const m = mapsMeta[b.beatmap_id]; const lenMin = m.len / 1000 / b.rate / 60;
+    if (b.beatmap_id === 101) return { passed: true, strained_minutes: lenMin * 0.05, xp: { speed: 900, consistency: 400, speedjam: 1 } };
+    if (m.sv) { const k = Math.min(1, Math.max(0, (b.map_plays - 1) / 16)); return { passed: true, strained_minutes: 0.05, xp: { speedjam: Math.round(5200 * (1 - 0.85 * k)), memory: Math.round(4 * k * (1 - k) * 3000), reading: 150, consistency: 300 } }; }
+    return { passed: true, strained_minutes: lenMin * Math.max(0, m.hard - b.strain_minutes / 2000), xp: { speed: Math.round(lenMin * m.hard * 9000), stamina: Math.round(lenMin * m.hard * 2500), consistency: Math.round(lenMin * 2000), technical: 0, reading: Math.round(lenMin * 300) } }; },
+};
+const mod = await import('./' + (new URLSearchParams(location.search).get('f') || 'queue-strain.js'));
+mod.mount({ id: 1, name: 'Queue Strain' }, { api });
+window.ready = true;
+</script></body></html>
