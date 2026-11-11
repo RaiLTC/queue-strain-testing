@@ -703,7 +703,7 @@ export const mount = (meta, host) => {
         // like against like: the same maps' plays with the bonuses
         const off = apart(x.same, x.real);
         const rough = ROUGH_REAL.includes(x.sk);
-        const tip = `${rough ? 'Changes a lot with your Tries on the map, so an average of past plays is rough here. ' : ''}With your bonuses, the same ${allMaps ? 'plays' : `${mapsEnough} map${mapsEnough === 1 ? '' : 's'}`}: ${fmt(x.same)}/h${off ? ' (more than a quarter apart)' : ''}`;
+        const tip = `${rough ? 'Changes a lot with your Tries on the map, so an average of past plays is rough here. ' : ''}Simulator + Bonuses, the same ${allMaps ? 'plays' : `${mapsEnough} map${mapsEnough === 1 ? '' : 's'}`}: ${fmt(x.same)}/h${off ? ' (more than a quarter apart)' : ''}`;
         const v = bold ? `<b>${fmt(x.real)}</b>` : fmt(x.real);
         return `<td class="n" title="${tip}"${off ? ' style="color:#fb923c; background:rgba(251,146,60,.10);"' : ''}>${v}${rough ? '<span class="qs-dim">*</span>' : ''}</td>`;
       };
@@ -725,14 +725,13 @@ export const mount = (meta, host) => {
             return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played yet</span>' : k >= localCount() ? `<span style="color:#4ade80">used ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
           </tbody></table></details>`;
       const cmpTable = `
-        <div class="qs-tablewrap" style="margin-top:8px; max-width:${partial ? 640 : 520}px;"><table>
-          <thead><tr><th>Skill</th>
-            <th class="n" title="The simulator's own numbers, before your genetics, medals and other bonuses.">Simulator alone</th>
-            <th class="n" title="The simulator's XP with mindblock taken off, then your medals and genetics added, the way the server counts it. This is what the rest of the add-on uses.">With your bonuses</th>
-            ${partial ? `<th class="n" title="With your bonuses, for the ${mapsEnough} map${mapsEnough === 1 ? '' : 's'} that have a local estimate: what the last column is compared with.">Bonuses, ${mapsEnough} map${mapsEnough === 1 ? '' : 's'}</th>` : ''}
-            <th class="n" title="What each map actually gave you per play, on average over your newest ${localCount()} plays of it at the queue's rate in the last 24 hours (the Local plays option). A map you haven't played in that time is left out. Those plays had their own mindblock and strain, so expect some difference.">Local estimate${partial ? `, ${mapsEnough} map${mapsEnough === 1 ? '' : 's'}` : ''}</th></tr></thead>
-          <tbody>${cmpRows.map(x => `<tr><td>${SKILL_NAMES[x.sk]}</td><td class="n qs-dim">${fmt(x.sim)}</td><td class="n">${fmt(x.matched)}</td>${partial ? `<td class="n qs-dim">${fmt(x.same)}</td>` : ''}${realCell(x)}</tr>`).join('')}
-            <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td class="n qs-dim">${fmt(total.sim)}</td><td class="n"><b>${fmt(total.matched)}</b></td>${partial ? `<td class="n qs-dim">${fmt(total.same)}</td>` : ''}${realCell(total, true)}</tr></tbody>
+        <div class="qs-tablewrap" style="margin-top:8px; max-width:560px;"><table>
+          <thead><tr><th>Skill XP</th>
+            <th class="n" title="The simulator's own numbers, before your genetics, medals and other bonuses.">Simulator</th>
+            <th class="n" title="The simulator's XP with mindblock taken off, then your medals and genetics added, the way the server counts it. This is what the rest of the add-on uses.">Simulator + Bonuses</th>
+            <th class="n" title="What each map actually gave you per play, on average over your newest ${localCount()} plays of it at the queue's rate in the last 24 hours (the Local plays option). A map you haven't played in that time is left out. Those plays had their own mindblock and strain, so expect some difference.${partial ? ` Covers the ${mapsEnough} played map${mapsEnough === 1 ? '' : 's'} only: hover a number to compare it with the same maps' Simulator + Bonuses.` : ''}">Local Estimation</th></tr></thead>
+          <tbody>${cmpRows.map(x => `<tr><td>${SKILL_NAMES[x.sk]}</td><td class="n qs-dim">${fmt(x.sim)}</td><td class="n">${fmt(x.matched)}</td>${realCell(x)}</tr>`).join('')}
+            <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td class="n qs-dim">${fmt(total.sim)}</td><td class="n"><b>${fmt(total.matched)}</b></td>${realCell(total, true)}</tr></tbody>
         </table></div>
         <div class="qs-dim" style="margin-top:4px; max-width:640px;">${liveNote} · ${localLine}${mapsEnough && cmpRows.some(x => ROUGH_REAL.includes(x.sk)) ? ' *Rough: depends on Tries.' : ''}</div>
         ${mapList}`;
