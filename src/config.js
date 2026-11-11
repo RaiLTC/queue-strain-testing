@@ -11,19 +11,20 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.3';
-export const VERSION_ID = '2026-11-11 06H37M';
+export const VERSION = '1.3.4';
+export const VERSION_ID = '2026-11-11 14H21M';
 
 // none / info / urgent
 export const NOTICE = {
-  id: VERSION_ID,
+  // the notice hasn't changed since 1.3.2: its own id, so players who read it don't see it again
+  id: '2026-11-11 06H37M',
   mode: 'info',
   text: `The numbers look right so far. Speed Jam and Memory haven't been checked yet: that's next.\nFound something off? Message me (Rai) in the in-game chat if online, or in the official oss!idle Discord`,
 };
 
 export const CHANGELOG = {
   id: VERSION_ID,
-  text: `v${VERSION} · 11 Nov 2026\n• Redesigned levels tab\n• Scans again by itself when you change the queue\n• Scanning works with Edit Queue open\n• Retries when the simulator is busy\n• Local estimate uses all your recent plays\n• Option to turn off animations\n• New time formatting\n• Bunch of fixes`,
+  text: `v${VERSION} · 11 Nov 2026\n• Overall level and rebirth in the levels tab\n• Queue changes update almost instantly, without a full scan\n• Local estimate uses your plays from the last 24 hours\n• Shorter, clearer texts\n• Turning off animations also turns off the level up colour\n• Bunch of fixes`,
 };
 
 // ---------------------------------------------------------------------
