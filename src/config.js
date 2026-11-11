@@ -101,7 +101,7 @@ export const TEXT = {
     queueChanged: 'Queue changed: updating in a moment…',
     rescanning: 'Queue changed: scanning again…',
     updating: 'Queue changed: updating…',
-    updated: 'Updated from stored answers ({n} of {of} plays estimated). Press Scan queue for exact numbers.',
+    countsTip: 'Calls reused: simulator answers kept from earlier scans, no server call. New calls: asked from the simulator now. Estimated: plays that borrowed the nearest stored answer after a queue change; press Scan queue for exact numbers.',
     queueChangedOff: 'Your queue changed since the scan. Press Scan queue to include it.',
     queueBack: 'The queue is back as scanned.',
     newRuns: 'Scan again to use the new number of runs.',

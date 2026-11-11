@@ -57,6 +57,8 @@ export const mount = (meta, host) => {
 
   const $ = (sel) => root.querySelector(sel);
   const nowEl = $('#qs-now'), outEl = $('#qs-out'), statusEl = $('#qs-status'), scanBtn = $('#qs-scan');
+  /** The status line under the buttons, with what hovering it explains (nothing by default). */
+  const setStatus = (text, tip = '') => { statusEl.textContent = text; statusEl.title = tip; };
   const hoursInput = $('#qs-hours'), startInput = $('#qs-start'), runsInput = $('#qs-runs'), memTopInput = $('#qs-memplays-top'), autoBox = $('#qs-auto'), animBox = $('#qs-anim'), localInput = $('#qs-local');
   /** How many of the next plays of each Speed Jam / Memory map to show: set in that tab, 12 at first. */
   let memPlays = SETTINGS.memoryPlays;
@@ -155,7 +157,7 @@ export const mount = (meta, host) => {
     if (same) {
       if (changedKey) {
         changedKey = null;
-        if (!scanning && nowEl.dataset.busy === 'Out of date: queue changed') { nowEl.classList.remove('qs-busy'); statusEl.textContent = TEXT.status.queueBack; }
+        if (!scanning && nowEl.dataset.busy === 'Out of date: queue changed') { nowEl.classList.remove('qs-busy'); setStatus(TEXT.status.queueBack); }
       }
       return;
     }
@@ -164,7 +166,7 @@ export const mount = (meta, host) => {
       if (!changedKey) {
         changedKey = key;
         if (!scanning) { nowEl.classList.add('qs-busy'); nowEl.dataset.busy = 'Out of date: queue changed'; }
-        statusEl.textContent = TEXT.status.queueChangedOff;
+        setStatus(TEXT.status.queueChangedOff);
       }
       return;
     }
@@ -172,7 +174,7 @@ export const mount = (meta, host) => {
     if (!changedKey || changedKey.join('|') !== key.join('|')) {
       changedKey = key;
       changedAt = now;
-      if (waitFor(scanKey, key) > 0) { statusEl.textContent = TEXT.status.queueChanged; return; }
+      if (waitFor(scanKey, key) > 0) { setStatus(TEXT.status.queueChanged); return; }
     }
     if (now - changedAt < waitFor(scanKey, key)) return;
     changedKey = null;
@@ -184,7 +186,7 @@ export const mount = (meta, host) => {
   runsInput.addEventListener('change', () => {
     runsInput.value = String(Math.min(5, Math.max(1, Math.round(parseFloat(runsInput.value) || SETTINGS.runsPerPlay))));
     savePrefs();
-    if (lastResult) statusEl.textContent = TEXT.status.newRuns;
+    if (lastResult) setStatus(TEXT.status.newRuns);
   });
   /** A new Memory plays count from that tab: only those curves again, mostly from the cache. */
   const setMemPlays = async (value) => {
@@ -198,12 +200,12 @@ export const mount = (meta, host) => {
     setScanning(true);
     try {
       r.sv = await svCurves(queue, r, memPlaysOf(), token, () => {
-        if (token === scanToken) statusEl.textContent = `Checking Speed Jam / Memory maps… ${r.counts().calls} sim calls`;
+        if (token === scanToken) setStatus(`Checking Speed Jam / Memory maps… ${r.counts().calls} sim calls`);
       });
       saveCache();
-      if (token === scanToken) { renderResult(queue, ctx, now, r); statusEl.textContent = `Speed Jam / Memory XP over the next ${memPlaysOf()} plays.`; }
+      if (token === scanToken) { renderResult(queue, ctx, now, r); setStatus(`Speed Jam / Memory XP over the next ${memPlaysOf()} plays.`); }
     } catch (e) {
-      if (!(e && e.message === 'stopped')) statusEl.textContent = `Failed: ${e && e.message ? e.message : e}`;
+      if (!(e && e.message === 'stopped')) setStatus(`Failed: ${e && e.message ? e.message : e}`);
     } finally {
       if (token === scanToken) setScanning(false);
     }
@@ -242,7 +244,7 @@ export const mount = (meta, host) => {
     saveCache();
     setScanning(false);
     if (nowEl.classList.contains('qs-busy')) nowEl.dataset.busy = 'Out of date: press Scan queue';
-    statusEl.textContent = why;
+    setStatus(why);
   };
   const hide = () => { closeConsole(); stopQueueWatch(); changedKey = null; if (scanning) autoPaused = true; stopScan(TEXT.status.closed); root.style.display = 'none'; };
   const shown = () => !!root && root.style.display === 'flex';
@@ -316,9 +318,9 @@ export const mount = (meta, host) => {
       outEl.innerHTML = '';
     }
     setScanning(true);
-    statusEl.textContent = why;
+    setStatus(why);
     const scanStarted = Date.now();
-    const fail = (msg) => { logProblem('scan', msg); if (token === scanToken) { outEl.innerHTML = `<div class="qs-err">${esc(msg)}</div>`; statusEl.textContent = ''; } };
+    const fail = (msg) => { logProblem('scan', msg); if (token === scanToken) { outEl.innerHTML = `<div class="qs-err">${esc(msg)}</div>`; setStatus(''); } };
     try {
       if (!api || typeof api.simulate !== 'function') throw new Error('This version of the game hands add-ons no simulator: update oss!idle.');
       let me = null;
@@ -355,19 +357,25 @@ export const mount = (meta, host) => {
       const hours = Math.min(24, Math.max(0.5, parseFloat(hoursInput.value) || SETTINGS.lookAheadHours));
       const ctx = {
         api, row, genes, geneSource, gear, startMinutes, hours, runs: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay,
-        onRetry: (n, of, pause) => { busyUntil = Date.now() + pause; busyNote = tx(TEXT.status.busyNote, { n, of }); statusEl.textContent = tx(TEXT.status.busy, { sec: Math.round(pause / 1000), n, of }); },
+        onRetry: (n, of, pause) => { busyUntil = Date.now() + pause; busyNote = tx(TEXT.status.busyNote, { n, of }); setStatus(tx(TEXT.status.busy, { sec: Math.round(pause / 1000), n, of })); },
         delaySec: Math.max(0, num(setting('autopilotDelay', 30))),
         rate: num(setting('rate', 1)) || 1,
         mods: Array.isArray(setting('mods', [])) ? setting('mods', []) : [],
         quick,
       };
-      statusEl.textContent = TEXT.status.simulating;
-      const result = await forecast(queue, ctx, (calls) => { if (token === scanToken) statusEl.textContent = `${TEXT.status.simulating} ${calls} sim call${calls === 1 ? '' : 's'}${Date.now() < busyUntil ? ` · ${busyNote}` : ''}`; }, token);
+      /** The scan's counts, updated as they go up: maps, plays done, answers reused, new simulator calls. */
+      const many = (n, one, more) => `${n} ${n === 1 ? one : more}`;
+      const countsLine = ({ plays, calls, fromCache }, estimated = 0) => [
+        many(queue.entries.length, 'map in queue', 'maps in queue'), `${plays} play${plays === 1 ? '' : 's'} done`,
+        many(fromCache, 'call reused', 'calls reused'), many(calls, 'new call', 'new calls'),
+        ...(estimated ? [`${estimated} estimated`] : []),
+      ].join(' · ');
+      const showCounts = (c) => { if (token === scanToken) setStatus(`${countsLine(c)}${Date.now() < busyUntil ? ` · ${busyNote}` : ''}`, TEXT.status.countsTip); };
+      setStatus(TEXT.status.simulating);
+      const result = await forecast(queue, ctx, showCounts, token);
       if (token !== scanToken) return;
       svPage = 0;
-      result.sv = await svCurves(queue, result, memPlaysOf(), token, () => {
-        if (token === scanToken) statusEl.textContent = `Checking Speed Jam / Memory maps… ${result.counts().calls} sim calls`;
-      });
+      result.sv = await svCurves(queue, result, memPlaysOf(), token, () => showCounts({ plays: result.plays.length, ...result.counts() }));
       result.setApprox(false);
       if (token !== scanToken) return;
       saveCache();
@@ -383,10 +391,7 @@ export const mount = (meta, host) => {
       root.classList.remove('qs-fresh');
       nowEl.classList.remove('qs-busy');
       if (firstResult) center(); else centerVertically();
-      const { calls: asked, fromCache: reused } = result.counts();
-      const estimated = result.plays.filter(p => p.approx).length;
-      if (quick && estimated) { statusEl.textContent = tx(TEXT.status.updated, { n: estimated, of: result.plays.length }); return; }
-      statusEl.textContent = `${queue.entries.length} map${queue.entries.length === 1 ? '' : 's'} in the queue${queue.label ? ` (${queue.label})` : ''}. ${asked} new sim call${asked === 1 ? '' : 's'}, ${reused} answer${reused === 1 ? '' : 's'} reused. Plays ${ctx.delaySec}s apart (your autopilot delay).`;
+      setStatus(countsLine({ plays: result.plays.length, ...result.counts() }, result.plays.filter(p => p.approx).length), TEXT.status.countsTip);
     } catch (e) {
       saveCache();
       if (e && e.message === 'stopped') return;

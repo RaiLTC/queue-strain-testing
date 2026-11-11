@@ -311,6 +311,8 @@ export async function forecast(queue, ctx, onProgress, token) {
   let runToken = token;
   const asks = new Map();
   let calls = 0, nextCall = 0, fromCache = 0;
+  /** How far the scan is: plays forecast so far, new simulator calls, stored answers reused. */
+  const progress = () => ({ plays: plays.length, calls, fromCache });
   // a quick update (after a queue change): a play the cache has no answer for borrows the nearest stored one,
   // and only a map with none at all asks the simulator. The scan turns it off after the Speed Jam / Memory curves.
   let approxOn = !!ctx.quick, approxIndex = null;
@@ -376,7 +378,8 @@ export async function forecast(queue, ctx, onProgress, token) {
             while (Date.now() < until) { if (runToken !== scanToken) throw new Error('stopped'); await sleep(250); }
           }
         }
-        onProgress(++calls);
+        calls++;
+        onProgress(progress());
         remember(asOwner, key, answer);
         return answer;
       })());
@@ -485,6 +488,7 @@ export async function forecast(queue, ctx, onProgress, token) {
     if (recent.length > RECENT_LIMIT * 2) recent.splice(0, recent.length - RECENT_LIMIT);
     plays.push({ entry: at, start, end: t, before, tries, fresh, approx: !!approx, ups, recentPlays, block, simStrain: bucket, simTries: playsKey, failAt: passed ? undefined : num(answer.fail_progress), xp: answer.xp || {}, strained, lengthMin: fullSec / 60, minutes: fatigue.minutes, bar, trend: warmupTrend(fullSec / 60, strained), passed });
     samples.push({ t, minutes: fatigue.minutes, bar });
+    onProgress(progress());
     t += delaySec;
     if (!loopFrom && plays.length === first.length) {
       loopFrom = { plays: plays.length, t, minutes: restedFatigue(fatigue, t * 1000, genes, gear) };
