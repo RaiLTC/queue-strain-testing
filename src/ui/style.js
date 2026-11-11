@@ -53,7 +53,9 @@ export const CSS = `
 /* animations off (the Animations option, or the system's reduce motion): everything holds still */
 #qs-window.qs-noanim *, #qs-window.qs-noanim *::before, #qs-window.qs-noanim *::after { animation:none !important; transition:none !important; }
 #qs-window.qs-noanim .qs-lv-seg.shift > i.gain { background:var(--qs-shift); opacity:.9; }
-#qs-window.qs-noanim .qs-lv-seg.complete > i.gain { background:var(--qs-complete); opacity:.7; }
+/* without animations, a completed piece keeps the plain progress colour (only the prestige piece stays pink) */
+#qs-window.qs-noanim .qs-lg-complete { display:none; }
+#qs-window .qs-lv-overall > td { border-bottom:1px solid #2b2b3a; }
 @media (prefers-reduced-motion: reduce) {
   #qs-window *, #qs-window *::before, #qs-window *::after { animation:none !important; transition:none !important; }
   #qs-window .qs-lv-seg.shift > i.gain { background:var(--qs-shift); opacity:.9; }

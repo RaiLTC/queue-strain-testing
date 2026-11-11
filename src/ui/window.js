@@ -824,10 +824,11 @@ export const mount = (meta, host) => {
       const loopSec = r.loopSec || 0;
       const marks = [6, 12, 24].filter(h => h < ctx.hours - 1e-6);
       const MAP_COLORS = SETTINGS.colors.maps;
-      const skillRows = SKILLS.map((sk) => {
-        const L0 = Math.floor(num(row0[sk])), x0 = num(row0[`${sk}XP`]);
+      /** A row of the table: `sk` (a skill, or 'overall'), from level L0 with x0 XP into it, to the goal level
+       *  `need` (prestige, or rebirth for overall), earning `gainOf(play)` a play. */
+      const progressRow = (sk, L0, x0, need, gainOf) => {
         const start = levelOf(L0, x0);
-        const need = 100 + num(row0[`${sk}Prestige`]);
+        const overall = sk === 'overall';
         const cost = xpForLevel(L0);
         // XP from here to the prestige level (0 when there already)
         let toPrestige = 0;
@@ -842,6 +843,10 @@ export const mount = (meta, host) => {
             const base = start < 50 ? 0 : 50, step = start < 50 ? 20 : 10;
             for (let m = base; m < 100; m += step) out.push(m);
             out.push(100);
+          } else if (overall) {
+            // overall levels come slowly: a level a piece, five at a time (100-105, 105-110, 110-115, ...)
+            const base = 100 + Math.floor((start - 100) / 5) * 5;
+            for (let m = base; m <= base + 5; m++) out.push(m);
           } else {
             const base = start >= 105 ? 105 : 100, span = need - base, step = span <= 5 ? 1 : Math.ceil(span / 5);
             for (let m = base; m < need; m += step) out.push(m);
@@ -856,7 +861,7 @@ export const mount = (meta, host) => {
         let mi = 0;
         for (const p of r.plays) {
           while (mi < marks.length && p.end > marks[mi] * 3600 + 1e-6) { const g = gainLevels(L0, x0, cum); atMark.push(levelOf(g.level, g.xp)); mi++; }
-          const gain = xpOf(p, sk);
+          const gain = gainOf(p);
           cum += gain;
           const id = queue.entries[p.entry].beatmapId;
           byMap.set(id, (byMap.get(id) || 0) + gain);
@@ -868,13 +873,18 @@ export const mount = (meta, host) => {
         while (mi < marks.length) { const g = gainLevels(L0, x0, cum); atMark.push(levelOf(g.level, g.xp)); mi++; }
         const gEnd = gainLevels(L0, x0, cum);
         const end = levelOf(gEnd.level, gEnd.xp);
-        const perH = perHour(p => xpOf(p, sk));
+        const perH = perHour(gainOf);
         // past the look-ahead: the same pace, kept up
         const later = (xpLeft) => (perH > 0 ? spanSec + Math.max(0, xpLeft - cum) / perH * 3600 : Infinity);
         const nextSec = nextAt ?? later(cost - x0);
         const readySec = readyAt ?? later(toPrestige);
-        return { sk, L0, x0, start, need, cost, toPrestige, cum, readyAt, nextSec, readySec, end, perH, atMark, byMap, barMarks, markAt };
-      });
+        return { sk, overall, L0, x0, start, need, cost, toPrestige, cum, readyAt, nextSec, readySec, end, perH, atMark, byMap, barMarks, markAt };
+      };
+      const skillRows = SKILLS.map(sk => progressRow(sk, Math.floor(num(row0[sk])), num(row0[`${sk}XP`]), 100 + num(row0[`${sk}Prestige`]), p => xpOf(p, sk)));
+      // the overall level, as rebirth counts it: every skill's lifetime XP together. Rebirth at 110, 10 more a generation.
+      const lifetime = SKILLS.reduce((t, sk) => t + num(row0[`${sk}LifetimeXp`]), 0);
+      const overallNow = gainLevels(0, 0, lifetime);
+      const overallRow = lifetime > 0 ? progressRow('overall', overallNow.level, overallNow.xp, 110 + ((num(row0.generation) || 1) - 1) * 10, totalOf) : null;
       /** A long stretch: up to a day as 8H 05M, past it as ~2D 20H (it assumes the queue keeps going). */
       const longDur = (sec) => {
         if (!isFinite(sec)) return null;
@@ -928,21 +938,21 @@ export const mount = (meta, host) => {
             <span class="qs-dim">${TEXT.levels.now}</span><span>${x.start.toFixed(2)}</span>
             ${marks.map((h, k) => `<span class="qs-dim">${tx(TEXT.levels.after, { time: dur(h * 3600) })}</span><span>${x.atMark[k].toFixed(2)}</span>`).join('')}
             <span class="qs-dim">${tx(TEXT.levels.after, { time: dur(spanSec) })}</span><span>${x.end.toFixed(2)}</span>
-            <span class="qs-dim">${TEXT.levels.prestige}</span><span title="${x.toPrestige ? tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) }) : ''}">${prestigeText(x)}</span></div></div>
+            <span class="qs-dim">${x.overall ? TEXT.levels.rebirth : TEXT.levels.prestige}</span><span title="${x.toPrestige ? tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) }) : ''}">${prestigeText(x)}</span></div></div>
           <div><div class="qs-lv-dh">${TEXT.levels.xpTitle}</div><div class="qs-lv-kv">
-            <span class="qs-dim">${TEXT.levels.perHour}</span><span>${x.perH > 0 ? `${fmt(x.perH)} <span class="qs-faint">${tx(TEXT.levels.queueShare, { pct: shareOf(x) })}</span>` : '–'}</span>
+            <span class="qs-dim">${TEXT.levels.perHour}</span><span>${x.perH > 0 ? `${fmt(x.perH)}${x.overall ? '' : ` <span class="qs-faint">${tx(TEXT.levels.queueShare, { pct: shareOf(x) })}</span>`}` : '–'}</span>
             <span class="qs-dim">${TEXT.levels.perPlay}</span><span>${plays ? fmt(x.cum / plays) : '–'}</span>
             ${loopSec ? `<span class="qs-dim">${TEXT.levels.perLoop}</span><span>${fmt(x.perH * loopSec / 3600)}</span>` : ''}
             <span class="qs-dim">${tx(TEXT.levels.within, { time: dur(spanSec) })}</span><span>${fmt(x.cum)}</span>
-            <span class="qs-dim">${TEXT.levels.toPrestige}</span><span>${x.toPrestige ? fmt(x.toPrestige) : '–'}</span></div></div>
+            <span class="qs-dim">${x.overall ? TEXT.levels.toRebirth : TEXT.levels.toPrestige}</span><span>${x.toPrestige ? fmt(x.toPrestige) : '–'}</span></div></div>
         </div></td></tr>`;
       };
-      const rowsHtml = skillRows.map((x) => {
+      const rowsHtml = (overallRow ? [overallRow, ...skillRows] : skillRows).map((x) => {
         const open = levelsOpen.has(x.sk);
-        return `<tr class="qs-lv-row${open ? ' open' : ''}" data-skill="${x.sk}">
-          <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span>${SKILL_NAMES[x.sk]}<span class="qs-sub">Lv ${x.start.toFixed(2)}</span></td>
-          <td class="n qs-lv-xph">${x.perH > 0 ? `<b>${fmt(x.perH)}</b><span class="qs-faint"> ${shareOf(x)}%</span>` : '<span class="qs-faint">–</span>'}</td>
-          <td class="n qs-lv-pres" title="${x.toPrestige ? tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) }) : ''}">${prestigeText(x)}</td>
+        return `<tr class="qs-lv-row${open ? ' open' : ''}${x.overall ? ' qs-lv-overall' : ''}" data-skill="${x.sk}">
+          <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span>${x.overall ? TEXT.levels.overall : SKILL_NAMES[x.sk]}<span class="qs-sub">Lv ${x.start.toFixed(2)}</span></td>
+          <td class="n qs-lv-xph">${x.perH > 0 ? `<b>${fmt(x.perH)}</b>${x.overall ? '' : `<span class="qs-faint"> ${shareOf(x)}%</span>`}` : '<span class="qs-faint">–</span>'}</td>
+          <td class="n qs-lv-pres" title="${x.overall ? tx(TEXT.levels.rebirthAt, { n: x.need }) : ''}${x.toPrestige ? `${x.overall ? ': ' : ''}${tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) })}` : ''}">${x.overall ? `<span class="qs-faint">${TEXT.levels.rebirth} </span>` : ''}${prestigeText(x)}</td>
           <td class="qs-lv-barcell">${levelsBar(x)}</td>
         </tr>${open ? detailRow(x) : ''}`;
       }).join('');
@@ -954,7 +964,7 @@ export const mount = (meta, host) => {
           <thead><tr><th>${TEXT.levels.skill}</th><th class="n">${TEXT.levels.xph}</th><th class="n">${TEXT.levels.prestige}</th><th style="padding-left:16px;">${TEXT.levels.bar}</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-        <div class="qs-legend" style="margin-top:6px;"><span><i class="qs-sw" style="background:var(--qs-now);"></i>${TEXT.levels.legendNow}</span><span><i class="qs-sw" style="background:var(--qs-now); opacity:.45;"></i>${TEXT.levels.legendProgress}</span><span><i class="qs-sw qs-sw-complete"></i>${TEXT.levels.legendComplete}</span><span><i class="qs-sw qs-sw-shift"></i>${TEXT.levels.legendPrestige}</span></div>
+        <div class="qs-legend" style="margin-top:6px;"><span><i class="qs-sw" style="background:var(--qs-now);"></i>${TEXT.levels.legendNow}</span><span><i class="qs-sw" style="background:var(--qs-now); opacity:.45;"></i>${TEXT.levels.legendProgress}</span><span class="qs-lg-complete"><i class="qs-sw qs-sw-complete"></i>${TEXT.levels.legendComplete}</span><span><i class="qs-sw qs-sw-shift"></i>${TEXT.levels.legendPrestige}</span></div>
       </div>`;
     }
 

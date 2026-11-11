@@ -11,7 +11,7 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.4';
+export const VERSION = '1.3.5';
 export const VERSION_ID = '2026-11-11 06H37M';
 
 // none / info / urgent
@@ -111,6 +111,10 @@ export const TEXT = {
     prestige: 'Prestige',
     bar: 'Levels to prestige',
     readyNow: 'ready now',
+    overall: 'Overall',
+    rebirth: 'Rebirth',
+    toRebirth: 'To rebirth',
+    rebirthAt: 'Rebirth at overall Lv {n}',
     keepPlaying: 'If you keep playing this queue',
     xpToGo: '{xp} XP to go',
     mapsTitle: 'Where its XP comes from',
