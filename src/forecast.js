@@ -250,9 +250,12 @@ export async function calibrate(row, queue, { startMinutes, rate, triesOffset = 
   return out;
 }
 
-/** The local estimate's plays: each queue map's newest real plays at the rate the queue plays it (SETTINGS.localPlays),
- *  as { beatmapId, rate, playedAt, real }. Read from the game's database alone: no simulator call. */
-export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays) {
+/** A set of mods as one text, in any order: "HR,SD". */
+export const modsText = (mods) => (Array.isArray(mods) ? mods : String(mods || '').split(',')).map(v => String(v).trim()).filter(Boolean).sort().join(',');
+/** The local estimate's plays: each queue map's newest real plays at the rate and mods the queue plays it
+ *  (SETTINGS.localPlays), as { beatmapId, rate, mods, playedAt, real }. Read from the game's database alone: no
+ *  simulator call. `rate` and `mods`: the player's, for the entries that don't lock their own. */
+export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays, mods = []) {
   const since = Date.now() - DAY_MS; // the last 24 hours only
   const out = [];
   for (const entry of queue.entries.filter((e, i, all) => all.findIndex(x => x.beatmapId === e.beatmapId) === i)) {
@@ -261,11 +264,12 @@ export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays
       rows = await gameRows('SELECT x.playedAt AS playedAt, x.gains AS gains, s.rate AS rate, s.mods AS mods FROM score_xp x LEFT JOIN score s ON s.id = x.scoreId WHERE x.characterId = ? AND x.beatmapId = ? AND x.playedAt >= ? ORDER BY x.playedAt DESC LIMIT ?', [row.id, entry.beatmapId, since, 5000]);
     } catch (_) { rows = null; }
     const queueRate = entry.lockedRate ?? rate;
-    const atRate = (rows || []).filter(v => num(v.playedAt) >= since && Math.abs((num(v.rate) || 1) - queueRate) < 0.001);
+    const queueMods = modsText(entry.lockedRate === undefined ? mods : (entry.lockedMods || []));
+    const atRate = (rows || []).filter(v => num(v.playedAt) >= since && Math.abs((num(v.rate) || 1) - queueRate) < 0.001 && modsText(v.mods) === queueMods);
     // the map's plays at this rate in the last 24 hours, shown next to how many the estimate uses
     const day = atRate.length;
     for (const x of atRate.slice(0, count)) {
-      out.push({ beatmapId: entry.beatmapId, rate: num(x.rate) || 1, playedAt: num(x.playedAt), real: parseGains(x.gains), day });
+      out.push({ beatmapId: entry.beatmapId, rate: num(x.rate) || 1, mods: queueMods, playedAt: num(x.playedAt), real: parseGains(x.gains), day });
     }
   }
   return out;

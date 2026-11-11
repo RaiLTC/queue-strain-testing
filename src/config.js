@@ -90,7 +90,7 @@ export const TEXT = {
     rescan: 'Rescan when the queue changes',
     rescanTip: 'When you add, remove or move maps, or change a rate or repeats, the add-on updates by itself: right away for repeats, {sec} second after adding, removing or moving maps. It uses the answers it already has, so only new maps ask the simulator. Once the last full scan is over {min} minutes old, it scans again in full. Playing through the queue doesn\'t count as a change.',
     localPlays: 'Local plays',
-    localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate, last 24 hours) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
+    localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate and mods, last 24 hours) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
     memoryPlays: 'Memory plays',
     memoryPlaysTip: 'For maps that give Speed Jam or Memory XP: how many of your next plays of each the Speed Jam / Memory tab shows',
   },
@@ -107,6 +107,10 @@ export const TEXT = {
     newRuns: 'Scan again to use the new number of runs.',
     stopped: 'Stopped. Press Scan queue to start again.',
     closed: 'Stopped: the window was closed. Press Scan queue to start again.',
+  },
+  xp: {
+    noLocal: 'No local estimate: this XP rises and falls with how many times you\'ve played each map (Tries), so past plays don\'t tell the next ones. See the Speed Jam / Memory tab.',
+    totalNoLocal: 'Without Speed Jam and Memory.',
   },
   levels: {
     title: 'Levels and XP',
