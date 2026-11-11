@@ -15,6 +15,7 @@ export let styleEl = null;
 export let scanToken = 0;
 /** Checks for new real plays every 2 seconds while the XP tab is open. */
 export let liveTimer = null;
+export let queueTimer = null;
 
 
 export const mount = (meta, host) => {
@@ -44,7 +45,7 @@ export const mount = (meta, host) => {
             <span class="qs-dim" title="${esc(TEXT.options.runsTip)}">${TEXT.options.runs}</span><input id="qs-runs" type="number" min="1" max="5" step="1" value="${SETTINGS.runsPerPlay}" style="width:44px;">
             <span class="qs-dim" style="margin-left:8px;" title="${esc(tx(TEXT.options.localPlaysTip, { n: SETTINGS.localPlays }))}">${TEXT.options.localPlays}</span><input id="qs-local" type="number" min="1" max="50" step="1" value="${SETTINGS.localPlays}" style="width:44px;">
             <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.animationsTip)}"><input id="qs-anim" type="checkbox"${SETTINGS.animations ? ' checked' : ''} style="margin:0;"> ${TEXT.options.animations}</label>
-            <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(tx(TEXT.options.rescanTip, { sec: SETTINGS.rescanSettleSec, min: SETTINGS.quickUpdateMaxMin }))}"><input id="qs-auto" type="checkbox"${SETTINGS.rescanOnQueueChange ? ' checked' : ''} style="margin:0;"> ${TEXT.options.rescan}</label>
+            <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(tx(TEXT.options.rescanTip, { sec: SETTINGS.rescanWaitSec.maps, min: SETTINGS.quickUpdateMaxMin }))}"><input id="qs-auto" type="checkbox"${SETTINGS.rescanOnQueueChange ? ' checked' : ''} style="margin:0;"> ${TEXT.options.rescan}</label>
             <span class="qs-dim" style="margin-left:auto;" title="${esc(TEXT.options.memoryPlaysTip)}">${TEXT.options.memoryPlays}</span><input id="qs-memplays-top" type="number" min="1" max="40" step="1" value="${SETTINGS.memoryPlays}" style="width:44px;">
           </div>
           <div id="qs-status" class="qs-dim" style="margin-top:6px;"></div>
@@ -96,7 +97,6 @@ export const mount = (meta, host) => {
   let liveNewest = 0;
   if (liveTimer) clearInterval(liveTimer);
   liveTimer = setInterval(async () => {
-    watchQueue();
     // only while the XP tab of a finished scan is on screen; the game's database is local, so this costs no call
     if (!root || !shown() || scanning || !lastResult || activeTab !== 'xp') return;
     const [queue, ctx, , r] = lastResult;
@@ -137,7 +137,14 @@ export const mount = (meta, host) => {
   let changedKey = null, changedAt = 0;
   /** A scan the player stopped (or closed the window on) isn't started again by itself until they scan. */
   let autoPaused = false;
-  const QUEUE_SETTLE_MS = SETTINGS.rescanSettleSec * 1000;
+  /** How long a change waits before the update: none when only repeats changed, a moment when the maps did. */
+  const waitFor = (then, now) => {
+    const maps = (key) => key.map(k => k.replace(/x\d+$/, '')).join('|');
+    return (maps(then) === maps(now) ? SETTINGS.rescanWaitSec.repeats : SETTINGS.rescanWaitSec.maps) * 1000;
+  };
+  /** The queue is checked every SETTINGS.queueCheckMs, only while the window is open. */
+  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(watchQueue, SETTINGS.queueCheckMs); };
+  const stopQueueWatch = () => { if (queueTimer) { clearInterval(queueTimer); queueTimer = null; } };
   const watchQueue = () => {
     if (!root || !shown() || !scanKey || autoPaused) return;
     const q = readQueue();
@@ -165,10 +172,9 @@ export const mount = (meta, host) => {
     if (!changedKey || changedKey.join('|') !== key.join('|')) {
       changedKey = key;
       changedAt = now;
-      statusEl.textContent = TEXT.status.queueChanged;
-      return;
+      if (waitFor(scanKey, key) > 0) { statusEl.textContent = TEXT.status.queueChanged; return; }
     }
-    if (now - changedAt < QUEUE_SETTLE_MS) return;
+    if (now - changedAt < waitFor(scanKey, key)) return;
     changedKey = null;
     if (scanning) { scanToken++; setScanning(false); }
     const quick = !!lastResult && lastFullAt > 0 && now - lastFullAt < SETTINGS.quickUpdateMaxMin * 60000;
@@ -221,7 +227,7 @@ export const mount = (meta, host) => {
     const r = root.getBoundingClientRect();
     root.style.top = `${Math.max(0, Math.round((innerHeight - r.height) / 2))}px`;
   };
-  const show = () => { root.style.display = 'flex'; };
+  const show = () => { root.style.display = 'flex'; startQueueWatch(); };
   /** Whether a scan is running: the button reads Stop while it is. */
   let scanning = false;
   const setScanning = (on) => {
@@ -238,7 +244,7 @@ export const mount = (meta, host) => {
     if (nowEl.classList.contains('qs-busy')) nowEl.dataset.busy = 'Out of date: press Scan queue';
     statusEl.textContent = why;
   };
-  const hide = () => { closeConsole(); if (scanning) autoPaused = true; stopScan(TEXT.status.closed); root.style.display = 'none'; };
+  const hide = () => { closeConsole(); stopQueueWatch(); changedKey = null; if (scanning) autoPaused = true; stopScan(TEXT.status.closed); root.style.display = 'none'; };
   const shown = () => !!root && root.style.display === 'flex';
   $('.qs-x').onclick = hide;
   /** Mark as read, on the warning sign and on the changelog: each turns gray and stays so until its id or text changes. */
@@ -1275,6 +1281,7 @@ export const mount = (meta, host) => {
 export const unmount = () => {
   scanToken++;
   if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  if (queueTimer) { clearInterval(queueTimer); queueTimer = null; }
   saveCache();
   if (keyListener) {
     window.removeEventListener('keydown', keyListener, true);
