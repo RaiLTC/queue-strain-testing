@@ -591,14 +591,14 @@ export const mount = (meta, host) => {
     if (reach >= 0) {
       const leave = r.samples.findIndex((s, i) => i > reach && !inPeak(s.bar));
       outlook.push(['Leaves Sweet Spot', leave >= 0
-        ? `at <b>${dur(r.samples[leave].t)}</b>, ${r.samples[leave].bar >= BAR_ZONES[1] ? 'pushed past it: play easier maps' : 'cooled below it: play harder maps'}`
+        ? `in <b>${dur(r.samples[leave].t)}</b>, ${r.samples[leave].bar >= BAR_ZONES[1] ? 'pushed past it: play easier maps' : 'cooled below it: play harder maps'}`
         : `<b>never</b> in ${dur(ctx.hours * 3600)}: this queue holds you there`]);
     }
     const fat = when(b => b >= XP_CUT);
     outlook.push(['<span style="color:#f87171">XP cut</span>', now.minutes >= now.knots[3]
       ? '<b style="color:#f87171">already</b>: past 300 min of strain'
       : fat !== undefined
-        ? `<b style="color:#f87171">at ${dur(fat)}</b>, when strain passes 300 min`
+        ? `<b style="color:#f87171">in ${dur(fat)}</b>, when strain passes 300 min`
         : `<b>never</b> in ${dur(ctx.hours * 3600)}: strain stays under 300 min`]);
     if (r.loopSec) {
       const drift = r.loopDrift;
@@ -716,13 +716,13 @@ export const mount = (meta, host) => {
         ? '<b style="color:#fca5a5">No queue maps played in 24H</b> at the queue\'s rates.'
         : allMaps
           ? `<b style="color:#4ade80">All ${n} map${n === 1 ? '' : 's'} played in 24H</b> (${playsText}). <span style="color:#fb923c">Orange</span>: over 25% off.`
-          : `<b style="color:#facc15">Only ${mapsEnough} of ${n} maps played in 24H</b> (${playsText}), so the local estimate covers ${mapsEnough === 1 ? 'that one' : 'those'} alone. <span style="color:#fb923c">Orange</span>: over 25% off.`;
+          : `<b style="color:#facc15">Only ${mapsEnough} out of ${n} maps were played, local estimates will be inaccurate</b> (${playsText}). <span style="color:#fb923c">Orange</span>: over 25% off.`;
       const partial = mapsEnough > 0 && !allMaps;
       const liveNote = `<span style="color:#4ade80;" title="Read again after every new play.${r.localAt ? ` Last updated ${new Date(r.localAt).toLocaleTimeString()}.` : ''}">● Live</span>`;
       const mapList = `<details class="qs-local-list"${localOpen ? ' open' : ''} style="margin-top:4px;"><summary class="qs-dim" style="cursor:pointer;">Local plays per map</summary>
           <table style="margin-top:4px;"><thead><tr><th>Map</th><th class="n">Rate</th><th class="n" title="Your plays of this map at the queue's rate in the last 24 hours.">Plays</th><th title="How many of your newest plays of this map at the queue's rate the estimate averages: the newest, up to ${localCount()} (the Local plays option).">Local estimate</th></tr></thead><tbody>
           ${queueMaps.map(e => { const k = playsOfMap(e.beatmapId), day = realAvg[e.beatmapId] && realAvg[e.beatmapId].day; const dayCell = day ? day : day === 0 || !k ? '<span class="qs-dim">0</span>' : '<span class="qs-dim">–</span>';
-            return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played in 24H</span>' : k >= localCount() ? `<span style="color:#4ade80">used ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
+            return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played yet</span>' : k >= localCount() ? `<span style="color:#4ade80">used ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
           </tbody></table></details>`;
       const cmpTable = `
         <div class="qs-tablewrap" style="margin-top:8px; max-width:${partial ? 640 : 520}px;"><table>
