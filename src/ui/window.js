@@ -652,14 +652,14 @@ export const mount = (meta, host) => {
       }
       // three estimates side by side: the simulator alone, with the bonuses, and the local estimate from real plays.
       // The local estimate is of the queue's maps alone, at the rate the queue plays each, from every play
-      // its newest SETTINGS.localPlays: a map counts from its first play.
+      // its newest SETTINGS.localPlays within the last 24 hours.
       const rateOfEntry = (e) => e.lockedRate ?? ctx.rate;
       const queueMaps = queue.entries.filter((e, i, all) => all.findIndex(x => x.beatmapId === e.beatmapId) === i);
       const realAvg = {};
       for (const d of r.local || (r.calib && r.calib.detail) || []) {
         const e = queueMaps.find(x => x.beatmapId === d.beatmapId);
         if (!e || Math.abs(num(d.rate) - rateOfEntry(e)) > 0.001) continue;
-        const a = realAvg[d.beatmapId] || (realAvg[d.beatmapId] = { n: 0, xp: {} });
+        const a = realAvg[d.beatmapId] || (realAvg[d.beatmapId] = { n: 0, xp: {}, day: d.day });
         a.n++;
         for (const sk of SKILLS) a.xp[sk] = (a.xp[sk] || 0) + num(d.real[sk]);
       }
@@ -695,13 +695,14 @@ export const mount = (meta, host) => {
       const n = queueMaps.length;
       const totalLocal = queueMaps.reduce((t, e) => t + playsOfMap(e.beatmapId), 0);
       const localLine = !mapsPlayed
-        ? '<b style="color:#fca5a5">No local plays found.</b> None of the queue\'s maps were played at the queue\'s rates yet.'
+        ? '<b style="color:#fca5a5">No local plays found.</b> None of the queue\'s maps were played at the queue\'s rates in the last 24 hours.'
         : `${allMaps ? `<b style="color:#4ade80">All ${n} map${n === 1 ? '' : 's'} played</b> (${totalLocal} play${totalLocal === 1 ? '' : 's'}).` : `<b style="color:#facc15">Played only ${mapsEnough} map${mapsEnough === 1 ? '' : 's'} out of ${n}</b> (${totalLocal} play${totalLocal === 1 ? '' : 's'}).`} Local estimates cover ${allMaps ? 'every play' : `${localPlays} of the ${r.plays.length} plays`} in the forecast, repeats included${allMaps ? '' : `, so they are for ${mapsEnough === 1 ? 'that map' : `those ${mapsEnough} maps`} alone`}. <span style="color:#fb923c">Orange</span>: more than a quarter away from the same plays with your bonuses.`;
       const partial = mapsEnough > 0 && !allMaps;
       const liveNote = `<span style="color:#4ade80;" title="The local estimate is read again whenever a new play is saved, checked every 2 seconds while this tab is open.">● Live</span>${r.localAt ? ` <span class="qs-dim">updated ${new Date(r.localAt).toLocaleTimeString()} after a new play</span>` : ''}`;
       const mapList = `<details class="qs-local-list"${localOpen ? ' open' : ''} style="margin-top:4px;"><summary class="qs-dim" style="cursor:pointer;">Local plays per map</summary>
-          <table style="margin-top:4px;"><thead><tr><th>Map</th><th class="n">Rate</th><th class="n" title="Your newest plays of this map at the queue's rate, up to ${localCount()}">Plays</th><th>Local estimate</th></tr></thead><tbody>
-          ${queueMaps.map(e => { const k = playsOfMap(e.beatmapId); return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${k || '<span class="qs-dim">0</span>'}</td><td>${k ? '<span style="color:#4ade80">used</span>' : '<span style="color:#f87171">Not played yet</span>'}</td></tr>`; }).join('')}
+          <table style="margin-top:4px;"><thead><tr><th>Map</th><th class="n">Rate</th><th class="n" title="Your plays of this map at the queue's rate in the last 24 hours.">Plays</th><th title="How many of your newest plays of this map at the queue's rate the estimate averages: the newest, up to ${localCount()} (the Local plays option).">Local estimate</th></tr></thead><tbody>
+          ${queueMaps.map(e => { const k = playsOfMap(e.beatmapId), day = realAvg[e.beatmapId] && realAvg[e.beatmapId].day; const dayCell = day ? day : day === 0 || !k ? '<span class="qs-dim">0</span>' : '<span class="qs-dim">–</span>';
+            return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played in 24H</span>' : k >= localCount() ? `<span style="color:#4ade80">used all ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
           </tbody></table></details>`;
       const cmpTable = `
         <div class="qs-tablewrap" style="margin-top:8px; max-width:${partial ? 640 : 520}px;"><table>
@@ -709,7 +710,7 @@ export const mount = (meta, host) => {
             <th class="n" title="The simulator's own numbers, before your genetics, medals and other bonuses.">Simulator alone</th>
             <th class="n" title="The simulator's XP with mindblock taken off, then your medals and genetics added, the way the server counts it. This is what the rest of the add-on uses.">With your bonuses</th>
             ${partial ? `<th class="n" title="With your bonuses, for the ${mapsEnough} map${mapsEnough === 1 ? '' : 's'} that have a local estimate: what the last column is compared with.">Bonuses, ${mapsEnough} map${mapsEnough === 1 ? '' : 's'}</th>` : ''}
-            <th class="n" title="What each map actually gave you per play, on average over your newest ${localCount()} plays of it at the queue's rate (the Local plays option). A map you haven't played yet is left out. Those plays had their own mindblock and strain, so expect some difference.">Local estimate${partial ? `, ${mapsEnough} map${mapsEnough === 1 ? '' : 's'}` : ''}</th></tr></thead>
+            <th class="n" title="What each map actually gave you per play, on average over your newest ${localCount()} plays of it at the queue's rate in the last 24 hours (the Local plays option). A map you haven't played in that time is left out. Those plays had their own mindblock and strain, so expect some difference.">Local estimate${partial ? `, ${mapsEnough} map${mapsEnough === 1 ? '' : 's'}` : ''}</th></tr></thead>
           <tbody>${cmpRows.map(x => `<tr><td>${SKILL_NAMES[x.sk]}</td><td class="n qs-dim">${fmt(x.sim)}</td><td class="n">${fmt(x.matched)}</td>${partial ? `<td class="n qs-dim">${fmt(x.same)}</td>` : ''}${realCell(x)}</tr>`).join('')}
             <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td class="n qs-dim">${fmt(total.sim)}</td><td class="n"><b>${fmt(total.matched)}</b></td>${partial ? `<td class="n qs-dim">${fmt(total.same)}</td>` : ''}${realCell(total, true)}</tr></tbody>
         </table></div>

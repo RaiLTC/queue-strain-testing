@@ -194,7 +194,7 @@ export async function calibrate(row, queue, { startMinutes, rate, triesOffset = 
 /** The local estimate's plays: each queue map's newest real plays at the rate the queue plays it (SETTINGS.localPlays),
  *  as { beatmapId, rate, playedAt, real }. Read from the game's database alone: no simulator call. */
 export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays) {
-  const since = 0;
+  const since = Date.now() - DAY_MS; // the last 24 hours only
   const out = [];
   for (const entry of queue.entries.filter((e, i, all) => all.findIndex(x => x.beatmapId === e.beatmapId) === i)) {
     let rows = null;
@@ -202,8 +202,11 @@ export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays
       rows = await gameRows('SELECT x.playedAt AS playedAt, x.gains AS gains, s.rate AS rate, s.mods AS mods FROM score_xp x LEFT JOIN score s ON s.id = x.scoreId WHERE x.characterId = ? AND x.beatmapId = ? AND x.playedAt >= ? ORDER BY x.playedAt DESC LIMIT ?', [row.id, entry.beatmapId, since, 5000]);
     } catch (_) { rows = null; }
     const queueRate = entry.lockedRate ?? rate;
-    for (const x of (rows || []).filter(v => Math.abs((num(v.rate) || 1) - queueRate) < 0.001).slice(0, count)) {
-      out.push({ beatmapId: entry.beatmapId, rate: num(x.rate) || 1, playedAt: num(x.playedAt), real: parseGains(x.gains) });
+    const atRate = (rows || []).filter(v => num(v.playedAt) >= since && Math.abs((num(v.rate) || 1) - queueRate) < 0.001);
+    // the map's plays at this rate in the last 24 hours, shown next to how many the estimate uses
+    const day = atRate.length;
+    for (const x of atRate.slice(0, count)) {
+      out.push({ beatmapId: entry.beatmapId, rate: num(x.rate) || 1, playedAt: num(x.playedAt), real: parseGains(x.gains), day });
     }
   }
   return out;

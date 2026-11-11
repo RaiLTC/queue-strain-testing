@@ -11,7 +11,7 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.2';
+export const VERSION = '1.3.3';
 export const VERSION_ID = '2026-11-11 06H37M';
 
 // none / info / urgent
@@ -82,7 +82,7 @@ export const TEXT = {
     rescan: 'Rescan when the queue changes',
     rescanTip: 'When you add, remove or move maps, or change a rate or repeats, the add-on scans again by itself, {sec} seconds after your last change. Playing through the queue doesn\'t count as a change.',
     localPlays: 'Local plays',
-    localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
+    localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate, last 24 hours) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
     memoryPlays: 'Memory plays',
     memoryPlaysTip: 'For maps that give Speed Jam or Memory XP: how many of your next plays of each the Speed Jam / Memory tab shows',
   },
