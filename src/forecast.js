@@ -68,6 +68,65 @@ export const remember = (owner, key, answer) => {
   cacheDirty = true;
 };
 
+/** How far apart two characters' cached answers are: the levels between them, or Infinity when the
+ *  generation, a prestige or upgrades differ (those change a play too much to borrow its answer). */
+export const ownerGap = (a, b) => {
+  if (a === b) return 0;
+  const A = a.split(':'), B = b.split(':');
+  if (A[0] !== B[0] || A[1] !== B[1] || A.length !== B.length) return Infinity;
+  let gap = 0;
+  for (let i = 2; i < A.length; i++) {
+    const [la, pa, ua] = A[i].split('.'), [lb, pb, ub] = B[i].split('.');
+    if (pa !== pb || ua !== ub) return Infinity;
+    gap += Math.abs(num(la) - num(lb));
+  }
+  return gap;
+};
+/** Between two answers, `t` of the way from `a` to `b`: XP and strain blended, the rest from the nearer one. */
+export const blendAnswers = (a, b, t) => {
+  const near = t < 0.5 ? a : b;
+  const xp = {};
+  for (const sk of new Set([...Object.keys(a.xp || {}), ...Object.keys(b.xp || {})])) xp[sk] = num(a.xp[sk]) + (num(b.xp[sk]) - num(a.xp[sk])) * t;
+  return { ...near, xp, strained_minutes: num(a.strained_minutes) + (num(b.strained_minutes) - num(a.strained_minutes)) * t };
+};
+/**
+ * A play's answer from the stored ones, without the simulator: after a queue change, the strain of the plays
+ * moves but the maps mostly don't. Of the same map, rate and mods: the nearest character (levels), the nearest
+ * Tries step, the same run when there is one, and between the two nearest strain steps, blended (as the
+ * official sim does on a pick). Undefined when the map has none: it needs the simulator.
+ */
+export const nearestAnswer = (index, owner, beatmapId, r, m, bucket, playsKey, run) => {
+  const list = index.get(`${beatmapId}|${r}|${[...m].sort().join('')}`);
+  if (!list) return undefined;
+  const gaps = new Map();
+  const gapOf = (own) => { if (!gaps.has(own)) gaps.set(own, ownerGap(owner, own)); return gaps.get(own); };
+  const best = Math.min(...list.map(c => gapOf(c.own)));
+  if (!Number.isFinite(best)) return undefined;
+  let pool = list.filter(c => gapOf(c.own) === best);
+  const triesGap = Math.min(...pool.map(c => Math.abs(c.plays - playsKey)));
+  pool = pool.filter(c => Math.abs(c.plays - playsKey) === triesGap);
+  const sameRun = pool.filter(c => c.run === run);
+  if (sameRun.length) pool = sameRun;
+  const below = pool.filter(c => c.bucket <= bucket).sort((a, b) => b.bucket - a.bucket)[0];
+  const above = pool.filter(c => c.bucket >= bucket).sort((a, b) => a.bucket - b.bucket)[0];
+  if (below && above && below.bucket !== above.bucket) return blendAnswers(below.answer, above.answer, (bucket - below.bucket) / (above.bucket - below.bucket));
+  return (below || above).answer;
+};
+/** The stored answers of character `charId`, by map, rate and mods, for nearestAnswer. */
+export const answerIndex = (charId) => {
+  const index = new Map();
+  const now = Date.now();
+  for (const [k, v] of loadCache()) {
+    if (!(v && v.answer && v.answer.xp) || now - v.at >= CACHE_TTL_MS) continue;
+    const parts = k.split('|');
+    if (parts.length < 6 || parts[0].split(':')[0] !== String(charId)) continue;
+    const group = `${parts[1]}|${parts[2]}|${parts[3]}`;
+    if (!index.has(group)) index.set(group, []);
+    index.get(group).push({ own: parts[0], bucket: num(parts[4]), plays: num(parts[5]), run: parts[6] ? num(parts[6].slice(1)) : 0, answer: v.answer });
+  }
+  return index;
+};
+
 /** Maps that give any Speed Jam or Memory XP: their next `count` plays, one at a time, at the strain
  *  the forecast first plays them at. Memory XP rises while a map is learned and fades once it is known,
  *  taking Speed Jam's with it, so these are simulated at every play count, not the forecast's steps. */
@@ -248,6 +307,9 @@ export async function forecast(queue, ctx, onProgress, token) {
   let runToken = token;
   const asks = new Map();
   let calls = 0, nextCall = 0, fromCache = 0;
+  // a quick update (after a queue change): a play the cache has no answer for borrows the nearest stored one,
+  // and only a map with none at all asks the simulator. The scan turns it off after the Speed Jam / Memory curves.
+  let approxOn = !!ctx.quick, approxIndex = null;
   // The character as each play is simulated: it levels up as the forecast's XP comes in, and the plays
   // after a level-up are simulated at the new level (cached answers belong to the level they were got at).
   const lv = Object.fromEntries(SKILLS.map(s => [s, { level: Math.floor(num(row[s])), xp: num(row[`${s}XP`]), lifetime: num(row[`${s}LifetimeXp`]) }]));
@@ -268,6 +330,11 @@ export async function forecast(queue, ctx, onProgress, token) {
     const key = `${beatmapId}|${r}|${[...m].sort().join('')}|${bucket}|${playsKey}${run ? `|#${run}` : ''}`;
     const kept = cached(asOwner, key);
     if (kept) { fromCache++; return { answer: kept, fresh: false }; }
+    if (approxOn) {
+      if (!approxIndex) approxIndex = answerIndex(num(row.id));
+      const near = nearestAnswer(approxIndex, asOwner, beatmapId, r, m, bucket, playsKey, run || 0);
+      if (near) { fromCache++; return { answer: near, fresh: false, approx: true }; }
+    }
     const askKey = `${asOwner}|${key}`;
     const fresh = !asks.has(askKey);
     if (fresh) {
@@ -331,7 +398,7 @@ export async function forecast(queue, ctx, onProgress, token) {
       fail_progress: fails.length ? mean(fails.map(a => num(a.fail_progress))) : undefined,
       xp,
     };
-    return { answer, fresh: got.some(g => g.fresh) };
+    return { answer, fresh: got.some(g => g.fresh), approx: got.some(g => g.approx) };
   };
   /** The simulator's answer for a play of the queue, and how it was got: `fresh` when this call went to the simulator. */
   const simulateWith = async (entry, minutes, mapPlays, exact = false) => {
@@ -339,8 +406,8 @@ export async function forecast(queue, ctx, onProgress, token) {
     const m = entry.lockedRate === undefined ? mods : (entry.lockedMods || []);
     const bucket = Math.min(STRAIN_CAP, strainStep(minutes));
     const playsKey = exact ? Math.max(0, Math.round(mapPlays)) : playStep(mapPlays);
-    const { answer, fresh } = await ask(owner, skills, entry.beatmapId, r, m, bucket, playsKey);
-    return { answer, fresh, bucket, playsKey };
+    const { answer, fresh, approx } = await ask(owner, skills, entry.beatmapId, r, m, bucket, playsKey);
+    return { answer, fresh, approx, bucket, playsKey };
   };
   const simulate = async (...args) => (await simulateWith(...args)).answer;
 
@@ -384,7 +451,7 @@ export async function forecast(queue, ctx, onProgress, token) {
     const entry = queue.entries[at];
     const before = restedFatigue(fatigue, t * 1000, genes, gear);
     const tries = playsOf[entry.beatmapId] || 0;
-    const { answer, fresh, bucket, playsKey } = await simulateWith(entry, before, tries);
+    const { answer, fresh, approx, bucket, playsKey } = await simulateWith(entry, before, tries);
     const recentPlays = recentPlaysOf(recent, entry.beatmapId, nowMs + t * 1000);
     const block = mindblockFactor(recentPlays);
     const r = entry.lockedRate ?? rate;
@@ -412,7 +479,7 @@ export async function forecast(queue, ctx, onProgress, token) {
     if (ups.length) owner = ownerNow();
     recent.push({ at: nowMs + start * 1000, id: entry.beatmapId });
     if (recent.length > RECENT_LIMIT * 2) recent.splice(0, recent.length - RECENT_LIMIT);
-    plays.push({ entry: at, start, end: t, before, tries, fresh, ups, recentPlays, block, simStrain: bucket, simTries: playsKey, failAt: passed ? undefined : num(answer.fail_progress), xp: answer.xp || {}, strained, lengthMin: fullSec / 60, minutes: fatigue.minutes, bar, trend: warmupTrend(fullSec / 60, strained), passed });
+    plays.push({ entry: at, start, end: t, before, tries, fresh, approx: !!approx, ups, recentPlays, block, simStrain: bucket, simTries: playsKey, failAt: passed ? undefined : num(answer.fail_progress), xp: answer.xp || {}, strained, lengthMin: fullSec / 60, minutes: fatigue.minutes, bar, trend: warmupTrend(fullSec / 60, strained), passed });
     samples.push({ t, minutes: fatigue.minutes, bar });
     t += delaySec;
     if (!loopFrom && plays.length === first.length) {
@@ -428,5 +495,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   return {
     plays, samples, knots, loopSec, loopDrift, loopPlays: loop.length, loopStart: loopFrom ? loopFrom.plays : 0, memory, memoryLocal, triesFrom, calib, medals, genetics, recentStart, recentByMap, simStats, runs,
     simulate, counts: () => ({ calls, fromCache }), useToken: (t) => { runToken = t; },
+    /** A quick update keeps borrowing stored answers through the Speed Jam / Memory curves, then stops. */
+    setApprox: (on) => { approxOn = on; },
   };
 }

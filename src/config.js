@@ -11,7 +11,7 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.3';
+export const VERSION = '1.3.4';
 export const VERSION_ID = '2026-11-11 06H37M';
 
 // none / info / urgent
@@ -45,6 +45,9 @@ export const SETTINGS = {
   retryWaitsSec: [2, 4, 8, 16, 32],
   // after the queue changes: seconds without another change before scanning again
   rescanSettleSec: 3,
+  // a queue change is updated from the stored simulator answers, no new calls except for new maps, while the
+  // last full scan is younger than this; past it, a full scan
+  quickUpdateMaxMin: 60,
   colors: {
     now: '#3987e5',
     prestige: '#ff8ab7',
@@ -80,7 +83,7 @@ export const TEXT = {
     animations: 'Animations',
     animationsTip: 'Turn off to stop every animation in this window, for performance.',
     rescan: 'Rescan when the queue changes',
-    rescanTip: 'When you add, remove or move maps, or change a rate or repeats, the add-on scans again by itself, {sec} seconds after your last change. Playing through the queue doesn\'t count as a change.',
+    rescanTip: 'When you add, remove or move maps, or change a rate or repeats, the add-on updates by itself, {sec} seconds after your last change: from the answers it already has, so only new maps ask the simulator. Once the last full scan is over {min} minutes old, it scans again in full. Playing through the queue doesn\'t count as a change.',
     localPlays: 'Local plays',
     localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate, last 24 hours) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
     memoryPlays: 'Memory plays',
@@ -92,6 +95,8 @@ export const TEXT = {
     busyNote: 'simulator busy, retrying (try {n} of {of})',
     queueChanged: 'Queue changed: scanning again in a moment…',
     rescanning: 'Queue changed: scanning again…',
+    updating: 'Queue changed: updating…',
+    updated: 'Updated from stored answers ({n} of {of} plays estimated). Press Scan queue for exact numbers.',
     queueChangedOff: 'Your queue changed since the scan. Press Scan queue to include it.',
     queueBack: 'The queue is back as scanned.',
     newRuns: 'Scan again to use the new number of runs.',
