@@ -425,10 +425,12 @@ export const mount = (meta, host) => {
     const see = opts ? SETTINGS.optionsSeeThrough : mods ? Number(fadeAmt.value) : 0;
     root.style.pointerEvents = see ? 'none' : '';
     if (see !== passSeeThrough) { passSeeThrough = see; root.classList.toggle('qs-passing', !!see); applyFade(); }
-    // the chat's hole, in the window's own pixels; nothing when they don't overlap
+    // the chat's hole, in the window's own pixels: only while the mouse is in the chat's area, so the whole window
+    // comes back as soon as the mouse is anywhere else (over the window included); nothing when they don't overlap
     const chat = chatBox.checked ? document.querySelector('.community-chat-container.is-enabled') : null;
     let hole = '';
-    if (chat) {
+    const inChat = chat && (() => { const c = chat.getBoundingClientRect(); return mouseX >= c.left && mouseX <= c.right && mouseY >= c.top && mouseY <= c.bottom; })();
+    if (chat && inChat) {
       const r = root.getBoundingClientRect(), c = chat.getBoundingClientRect();
       const x1 = Math.max(c.left, r.left) - r.left, y1 = Math.max(c.top, r.top) - r.top;
       const x2 = Math.min(c.right, r.right) - r.left, y2 = Math.min(c.bottom, r.bottom) - r.top;
