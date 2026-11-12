@@ -68,7 +68,7 @@ export const barHtml = (bar, ahead) => {
     const smooth = bins.map((v, k) => (bins[k - 1] || 0) * 0.25 + v * 0.5 + (bins[k + 1] || 0) * 0.25);
     const top = Math.max(...smooth);
     const H = 26, mid = 13;
-    const half = (v) => (v > 0 ? 3 + (v / top) * 8 : 0);
+    const half = (v) => (v > 0 ? 2 + (v / top) * 4 : 0);
     const used = smooth.map((v, k) => (v > 0 ? k : -1)).filter(k => k >= 0);
     let shapes = '';
     if (used.length && top > 0) {
@@ -88,11 +88,11 @@ export const barHtml = (bar, ahead) => {
   return `
   <div class="qs-bar">
     <div class="qs-track"></div>
+    ${future}
     <div class="qs-tick" style="left:${BAR_ZONES[0] * 100}%"></div>
     <div class="qs-tick" style="left:${BAR_ZONES[1] * 100}%"></div>
     <div class="qs-cut" style="left:${XP_CUT * 100}%" title="300 min of strain: XP gains start being cut"></div>
     <div class="qs-cut-label" style="left:${XP_CUT * 100}%">300 min · XP cut</div>
-    ${future}
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
   </div>`;
 };
