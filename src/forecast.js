@@ -128,7 +128,7 @@ export const answerIndex = (charId) => {
 };
 
 /** Maps that give any Speed Jam or Memory XP: their next `count` plays, one at a time, at the strain
- *  the forecast first plays them at. Memory XP rises while a map is learned and fades once it is known,
+ *  (and mindblock) the forecast plays each at; past the forecast's plays of the map, at its last one's (issue #8). Memory XP rises while a map is learned and fades once it is known,
  *  taking Speed Jam's with it, so these are simulated at every play count, not the forecast's steps. */
 export async function svCurves(queue, r, count, token, onProgress) {
   const out = [];
@@ -142,12 +142,14 @@ export async function svCurves(queue, r, count, token, onProgress) {
     if (!(sv > 0)) continue;
     const start = Math.max(0, Math.round(num(r.memory[entry.beatmapId])));
     const rows = [];
+    const own = r.plays.filter(q => queue.entries[q.entry].beatmapId === entry.beatmapId);
     for (let k = 0; k < count; k++) {
       if (token !== scanToken) throw new Error('stopped');
-      const answer = await r.simulate(entry, p.before, start + k, true);
+      const q = own[Math.min(k, own.length - 1)];
+      const answer = await r.simulate(entry, q.before, start + k, true);
       onProgress();
       const xp = answer.xp || {};
-      rows.push({ play: start + k + 1, speedjam: num(xp.speedjam), memory: num(xp.memory) });
+      rows.push({ play: start + k + 1, speedjam: num(xp.speedjam), memory: num(xp.memory), block: num(q.block ?? 1) });
     }
     out.push({ entry, share: total > 0 ? sv / total : 0, start, rows });
   }

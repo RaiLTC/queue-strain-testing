@@ -998,10 +998,8 @@ export const mount = (meta, host) => {
       svPage = Math.min(Math.max(0, svPage), r.sv.length - 1);
       const pages = r.sv.length;
       const { entry, share, start, rows: simRows } = r.sv[svPage];
-      // Speed Jam takes the map's mindblock as the forecast first plays it; Memory never does
-      const firstOfMap = r.plays.find(p => queue.entries[p.entry].beatmapId === entry.beatmapId);
-      const svBlock = firstOfMap ? num(firstOfMap.block ?? 1) : 1;
-      const rows = simRows.map(x => ({ ...x, speedjam: x.speedjam * svBlock * factorOf('speedjam'), memory: x.memory * factorOf('memory') }));
+      // Speed Jam takes each play's mindblock as the forecast plays it; Memory never does
+      const rows = simRows.map(x => ({ ...x, speedjam: x.speedjam * num(x.block ?? 1) * factorOf('speedjam'), memory: x.memory * factorOf('memory') }));
       const top = rows.reduce((best, x) => (x.memory > best.memory ? x : best), rows[0]);
       // a peak only when Memory turns down within the plays shown; at the last row it may still be rising
       const peak = top && top.memory > 0 && top !== rows[rows.length - 1] ? top : null;
@@ -1301,7 +1299,7 @@ export const mount = (meta, host) => {
       <div class="qs-card"><div class="qs-h">Queue as read</div>
         <div class="qs-dim" style="margin-bottom:4px;">From the dock: ${queue.entries.length} map${queue.entries.length === 1 ? '' : 's'}${queue.label ? `, "${esc(queue.label)}"` : ''}.</div>
         <div class="qs-tablewrap" style="max-height:200px;"><table><thead><tr><th>#</th><th>Map</th><th class="n">Id</th><th class="n">Rate</th><th class="n">Repeat</th><th class="n">Tries</th></tr></thead><tbody>
-          ${queue.entries.map((e, i) => `<tr><td class="qs-dim">${i + 1}</td><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${e.beatmapId}</td><td class="n">${e.lockedRate ?? `${ctx.rate} (yours)`}×</td><td class="n">${e.repeat}${e.played ? ` (${e.played} started)` : ''}</td><td class="n" title="${r.triesFrom && r.triesFrom[e.beatmapId] === 'server' ? `from the server; this computer's plays count ${num(r.memoryLocal[e.beatmapId]).toFixed(1)}` : 'counted from this computer\'s plays: the server didn\'t answer'}">${num(r.memory[e.beatmapId]).toFixed(1)}${r.triesFrom && r.triesFrom[e.beatmapId] === 'server' ? '' : ' <span class="qs-dim">local</span>'}</td></tr>`).join('')}
+          ${queue.entries.map((e, i) => `<tr><td class="qs-dim">${i + 1}</td><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${e.beatmapId}</td><td class="n">${e.lockedRate ?? `${ctx.rate} (yours)`}×</td><td class="n">${e.repeat}${e.played ? ` (${e.played} started)` : ''}</td><td class="n" title="${r.triesFrom && r.triesFrom[e.beatmapId] === 'server' ? `from the server` : 'counted from this computer\'s plays: the server didn\'t answer'}">${num(r.memory[e.beatmapId]).toFixed(1)}${r.triesFrom && r.triesFrom[e.beatmapId] === 'server' ? '' : ' <span class="qs-dim">local</span>'}</td></tr>`).join('')}
         </tbody></table></div>
       </div>`;
     const debugPlays = debugLimit > 0 ? r.plays.slice(0, debugLimit) : r.plays;
@@ -1424,7 +1422,7 @@ export const mount = (meta, host) => {
       lines.push(`Queue: ${queue.entries.length} maps · read from ${queue.from || '?'}${queue.label ? ` · "${queue.label}"` : ''} · key ${queueKey(queue.entries).join('|')}`);
       for (const id of [...new Set(queue.entries.map(e => e.beatmapId))]) {
         const e = queue.entries.find(x => x.beatmapId === id);
-        lines.push(`  ${id} ${e.title.slice(0, 40)} · ×${e.lockedRate ?? ctx.rate}${e.lockedMods && e.lockedMods.length ? ` ${e.lockedMods.join('')}` : ''} · rep ${e.repeat} played ${e.played} · Tries ${num(r.memory[id]).toFixed(1)} (${(r.triesFrom || {})[id] || '?'}; local ${num((r.memoryLocal || {})[id]).toFixed(1)}) · last day ${num((r.recentByMap || {})[id])} plays · real plays ${num(((r.localSummary || {}).perMap || {})[id])}`);
+        lines.push(`  ${id} ${e.title.slice(0, 40)} · ×${e.lockedRate ?? ctx.rate}${e.lockedMods && e.lockedMods.length ? ` ${e.lockedMods.join('')}` : ''} · rep ${e.repeat} played ${e.played} · Tries ${num(r.memory[id]).toFixed(1)} (${(r.triesFrom || {})[id] || '?'}) · last day ${num((r.recentByMap || {})[id])} plays · real plays ${num(((r.localSummary || {}).perMap || {})[id])}`);
       }
       lines.push(`Simulator: ${r.counts().calls} new · ${r.counts().fromCache} cached · ${st.busy} busy (retried) · ${st.failed} failed · avg ${r.counts().calls ? Math.round(st.ms / Math.max(1, r.counts().calls)) : 0}ms · slowest ${(st.slowest / 1000).toFixed(1)}s · scan ${((r.scanMs || 0) / 1000).toFixed(1)}s`);
       lines.push(`Forecast: ${r.plays.length} plays over ${dur(spanH * 3600)} · loop ${r.loopSec ? `${r.loopPlays} plays in ${dur(r.loopSec)}` : '–'} · mindblock window ${num(r.recentStart)} plays at start`);
