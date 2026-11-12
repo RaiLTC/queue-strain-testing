@@ -1215,7 +1215,7 @@ export const mount = (meta, host) => {
       ${content}`;
 
     for (const tr of outEl.querySelectorAll('.qs-lv-row')) {
-      tr.onclick = () => { const k = tr.dataset.skill; if (levelsOpen.has(k)) levelsOpen.delete(k); else levelsOpen.add(k); renderResult(...lastResult); };
+      tr.onclick = () => { const k = tr.dataset.skill; if (levelsOpen.has(k)) levelsOpen.delete(k); else levelsOpen.add(k); renderResult(...lastResult); centerVertically(); };
     }
     const localList = outEl.querySelector('.qs-local-list');
     if (localList) localList.addEventListener('toggle', () => { localOpen = localList.open; centerVertically(); });
