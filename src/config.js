@@ -29,8 +29,7 @@ export const CHANGELOG = {
 • XP loss shown past the XP cut
 • Overall level on top, rebirth time in words
 • Clearer times and colours
-• Window fades when not in use and moves aside for Edit Queue
-• Click outside or Esc to close, new Window options
+• Smarter window behaviour, with new Window options
 • Bunch of fixes`,
 };
 
