@@ -63,10 +63,17 @@ export const barHtml = (bar, ahead) => {
       for (let k = 0; k <= 20; k++) { const o = k / 20; stops.push(`<stop offset="${o}" stop-color="${zoneColor((a + (e - a) * o) / 100)}"/>`); }
       const id = `qs-arrow-${Math.random().toString(36).slice(2, 8)}`;
       // a small mark where the bar is after each full hour (the last one is the arrowhead)
+      // with its hour written above it, unless that would overlap a label already placed or the XP cut's
       let marks = '';
+      const placed = [XP_CUT * 100];
       for (let h = 1; h < ahead.hours; h++) {
         const s = ahead.samples.find(x => x.t >= h * 3600);
         if (!s) break;
+        const x = s.bar * 100;
+        if (placed.every((p, i) => Math.abs(p - x) >= (i === 0 ? 9 : 4))) {
+          placed.push(x);
+          future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%">${h}<small class="qs-u">h</small></div>`;
+        }
         marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".85"><title>After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%</title></line>`;
       }
       future += `<svg class="qs-arrow" viewBox="0 0 100 10" preserveAspectRatio="none"><title>After ${hours}: ${Math.round(e)}%</title><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.toFixed(2)}" x2="${e.toFixed(2)}" y1="0" y2="0">${stops.join('')}</linearGradient></defs><line x1="${a.toFixed(2)}" x2="${(e - dir * 1.2).toFixed(2)}" y1="5" y2="5" stroke="url(#${id})" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path d="M${e.toFixed(2)} 5 L${(e - dir * 1.4).toFixed(2)} 1.8 L${(e - dir * 1.4).toFixed(2)} 8.2 Z" fill="${zoneColor(end)}"/>${marks}</svg>`;
