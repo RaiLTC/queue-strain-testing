@@ -25,15 +25,11 @@ export const NOTICE = {
 export const CHANGELOG = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
-• Strain bar shows where you're headed, with a time slider
-• XP loss shown past the XP cut
-• Overall level on top, rebirth time in words
-• Clearer times and colours
-• Smarter window behaviour, with new Window options
 • Clicks pass through to the mods menu, options and Add-ons
 • Chat shows through the window when you point at it
 • Esc closes an open menu or the chat first
-• Bunch of fixes`,
+• Opening the Window options no longer moves the window
+• Fixed window fading when opened under the mouse`,
 };
 
 // ---------------------------------------------------------------------
