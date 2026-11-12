@@ -48,6 +48,8 @@ export const CSS = `
 #qs-window .qs-lv-tk.time { color:#c7d2fe; }
 #qs-window .qs-lv-tk.goal { color:var(--qs-prestige); }
 #qs-window .qs-lv-tk.first { position:absolute; left:0; top:14px; margin-top:0; }
+/* a mark between two pieces sits centred under the gap (the gap is 3px) */
+#qs-window .qs-lv-tk.mid { transform:translateX(calc(50% + 1.5px)); }
 /* reaching prestige within the look-ahead: the last piece's progress shifts to a dark version of the game's pink */
 #qs-window .qs-lv-seg.shift > i.gain, #qs-window .qs-sw-shift { animation:qs-shift 2.4s ease-in-out infinite; }
 @keyframes qs-shift { 0%, 100% { background:var(--qs-now); opacity:.45; } 50% { background:var(--qs-shift); opacity:.95; } }
