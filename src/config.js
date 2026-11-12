@@ -39,8 +39,8 @@ export const SETTINGS = {
   // the Window group in the options: fade the window while the mouse is away (how see-through, in %), and what a
   // click outside it does: 'close' (closes it, the game doesn't get the click), 'through' (closes it and the game
   // gets the click too) or 'stay' (nothing)
-  fadeAway: false,
-  fadeAmount: 50,
+  fadeAway: true,
+  fadeAmount: 80,
   clickOutside: 'through',
   // while editing the queue with its mods menu up, clicks go through this window to the menu under it
   modsPassThrough: true,
