@@ -1146,24 +1146,12 @@ export const mount = (meta, host) => {
       /** The nearest upgrade's time, short, for its label on the bar: now, 2h 10m, ~5d 8h. */
       const upgradeSoon = (ev) => (ev.at <= 0 ? TEXT.levels.upgradeNow : ev.at < 86400 ? `${ev.at > spanSec + 1 ? '~' : ''}${durH(ev.at)}` : `~${unitsHtml(`${Math.floor(Math.round(ev.at / 3600) / 24)}d ${Math.round(ev.at / 3600) % 24}h`)}`);
       const upgradeText = (ev) => `${tx(TEXT.levels.upgradeAt, { k: ev.k, lv: ev.level.toFixed(ev.level % 1 ? 2 : 0) })} · ${upgradeWhen(ev)}`;
-      /** With a route the level drops at every upgrade, so its bar measures the XP still to farm on the way to
-       *  prestige instead: now at the start, prestige at the end, each upgrade where along that XP it is bought. */
-      const routeBar = (x) => {
-        const s2 = x.sim, total = s2.farmedTotal;
-        const at = (v) => `${Math.max(0, Math.min(100, v / total * 100)).toFixed(2)}%`;
-        const endF = Math.max(0, Math.min(1, s2.farmedEnd / total));
-        const ups = s2.events;
-        const lines = ups.map(ev => `<b class="qs-lv-up" style="left:${at(ev.farmed)}" title="${esc(upgradeText(ev))}"></b>`).join('');
-        const labels = ups.map(ev => `<span class="qs-lv-uplbl${ev === ups[0] ? ' next' : ''}" style="left:${at(ev.farmed)}" title="${esc(upgradeText(ev))}">#${ev.k}${ev === ups[0] ? ` ${upgradeSoon(ev)}` : ''}</span>`).join('');
-        const soon = x.readyAt !== undefined && x.readyAt > 0;
-        return `<div class="qs-lv-bar${ups.length ? ' ups' : ''}" title="${esc(tx(TEXT.levels.routeBarTip, { xp: fmt(total) }))}"><span class="qs-lv-tk first">${TEXT.levels.routeNow}</span><div class="qs-lv-cell"><div class="qs-lv-seg${soon ? ' shift' : ''}">${endF > 0 ? `<i class="gain" style="left:0; width:${(endF * 100).toFixed(2)}%"></i>` : ''}${lines}</div>${labels}
-          <span class="qs-lv-tk goal">${x.need}${soon ? ` · ${durH(x.readyAt)}` : ''}</span></div></div>`;
-      };
       const levelsBar = (x) => {
-        if (x.sim && !x.lifetime && x.sim.tracked && isFinite(x.sim.farmedTotal) && x.sim.farmedTotal > 0) return routeBar(x);
         const m = x.barMarks, n = m.length - 1;
         const soon = !x.lifetime && x.readyAt !== undefined && x.readyAt > 0;
         const ups = x.sim && !x.lifetime ? x.sim.events : [];
+        const next = ups[0];
+        let above = false;
         const cells = [];
         for (let k = 0; k < n; k++) {
           const a2 = m[k], b2 = m[k + 1];
@@ -1172,20 +1160,24 @@ export const mount = (meta, host) => {
           const last = k === n - 1;
           const at = x.markAt[b2];
           const goal = !x.lifetime && last && x.start >= 100 && b2 === x.need;
-          // the route's upgrades bought inside this piece
-          // the route's upgrades bought inside this piece: a line each, its number above it, and for the nearest
-          // one the time until it too ("#4 2h 10m")
+          // the route's upgrades bought inside this piece: a line each. The next one also gets its number and the time
+          // until it ("#4 2h 10m"), under the bar, or above it when it sits in the bar's first 5% (by the start mark)
           const here = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9);
           const leftOf = (ev) => `${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%`;
           const upMarks = here.map(ev => `<b class="qs-lv-up" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}"></b>`).join('');
-          const upLabels = here.map(ev => `<span class="qs-lv-uplbl${ev === ups[0] ? ' next' : ''}" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}">#${ev.k}${ev === ups[0] ? ` ${upgradeSoon(ev)}` : ''}</span>`).join('');
+          let upLabels = '';
+          if (next && here.includes(next)) {
+            const f = (next.level - a2) / (b2 - a2), whole = (k + f) / n;
+            above = whole < 0.05;
+            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${whole > 0.9 ? ' transform:translateX(-100%);' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
+          }
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
           const completes = endF >= 1 && nowF < 1;
           cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>${upLabels}
             <span class="qs-lv-tk${last ? '' : ' mid'}${goal ? ' goal' : at !== undefined ? ' time' : ''}">${label}</span></div>`);
         }
-        return `<div class="qs-lv-bar${ups.length ? ' ups' : ''}"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}</div>`;
+        return `<div class="qs-lv-bar${above ? ' ups' : ''}"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}</div>`;
       };
       const prestigeText = (x) => {
         if (x.readyAt === 0) return `<span class="qs-ready">${TEXT.levels.readyNow}</span>`;
