@@ -267,7 +267,13 @@ export async function localPlaysOf(row, queue, rate, count = SETTINGS.localPlays
     } catch (_) { rows = null; }
     const queueRate = entry.lockedRate ?? rate;
     const queueMods = modsText(entry.lockedRate === undefined ? mods : (entry.lockedMods || []));
-    const atRate = (rows || []).filter(v => num(v.playedAt) >= since && Math.abs((num(v.rate) || 1) - queueRate) < 0.001 && modsText(v.mods) === queueMods);
+    let atRate = (rows || []).filter(v => num(v.playedAt) >= since && Math.abs((num(v.rate) || 1) - queueRate) < 0.001 && modsText(v.mods) === queueMods);
+    // a map that gives no XP leaves nothing in the XP log: its plays still count, from the scores, as plays of 0 XP
+    if (!atRate.length) {
+      let plays = null;
+      try { plays = await gameRows('SELECT playedAt, rate, mods FROM score WHERE characterId = ? AND beatmapId = ? AND playedAt >= ? ORDER BY playedAt DESC', [row.id, entry.beatmapId, since]); } catch (_) { plays = null; }
+      atRate = (plays || []).filter(v => Math.abs((num(v.rate) || 1) - queueRate) < 0.001 && modsText(v.mods) === queueMods).map(v => ({ ...v, gains: '{}' }));
+    }
     // the map's plays at this rate in the last 24 hours, shown next to how many the estimate uses
     const day = atRate.length;
     for (const x of atRate.slice(0, count)) {

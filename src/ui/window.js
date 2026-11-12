@@ -646,7 +646,7 @@ export const mount = (meta, host) => {
     const cols = [...new Set(rows.flatMap(r => Object.keys(r)))];
     const isNum = (c) => rows.every(r => r[c] === undefined || r[c] === '' || typeof r[c] === 'number');
     const numCols = new Set(cols.filter(isNum));
-    return `<table><thead><tr><th class="qs-con-i">#</th>${cols.map(c => `<th${numCols.has(c) ? ' class="n"' : ''}${c === 'Match' ? ` title="${MATCH_HELP}" style="cursor:help;"` : ''}>${esc(c)}${c === 'Match' ? ' ⓘ' : ''}</th>`).join('')}</tr></thead><tbody>
+    return `<table><thead><tr><th class="qs-con-i">#</th>${cols.map(c => `<th${numCols.has(c) || c === 'Match' ? ' class="n"' : ''}${c === 'Match' ? ` title="${MATCH_HELP}" style="cursor:help;"` : ''}>${esc(c)}${c === 'Match' ? ' ⓘ' : ''}</th>`).join('')}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr${i < fresh ? ' class="qs-con-new"' : ''}><td class="qs-con-i">${i < fresh ? '<span class="qs-con-badge">NEW</span>' : i}</td>${cols.map(c => {
         const v = r[c];
         if (numCols.has(c)) return `<td class="n${v === 0 ? ' z' : ''}">${v === undefined ? '' : esc(typeof v === 'number' ? v.toLocaleString() : v)}</td>`;
@@ -660,9 +660,14 @@ export const mount = (meta, host) => {
     const cols = [...new Set(rows.flatMap(r => Object.keys(r)))];
     return [cols.join('\t'), ...rows.map(r => cols.map(c => r[c] ?? '').join('\t'))].join('\n');
   };
+  /** Each opening counts: one that finishes loading after a newer one started is dropped, so only one console exists. */
+  let consoleSeq = 0;
   const openConsole = async (data) => {
+    const seq = ++consoleSeq;
     closeConsole();
     Object.assign(data, await data.loadPlayed());
+    if (seq !== consoleSeq) return;
+    closeConsole();
     /** How many of the newest plays arrived with the last update: marked until newer ones arrive. */
     data.fresh = 0;
     data.checkedAt = Date.now();
@@ -949,7 +954,7 @@ export const mount = (meta, host) => {
       const mapList = `<details class="qs-local-list"${localOpen ? ' open' : ''} style="margin-top:4px;"><summary class="qs-dim" style="cursor:pointer;">Local plays per map</summary>
           <table style="margin-top:4px;"><thead><tr><th>Map</th><th class="n">Rate</th><th class="n" title="Your plays of this map at the queue's rate and mods in the last 24 hours.">Plays</th><th title="How many of your newest plays of this map at the queue's rate the estimate averages: the newest, up to ${localCount()} (the Local plays option).">Local estimate</th></tr></thead><tbody>
           ${queueMaps.map(e => { const k = playsOfMap(e.beatmapId), day = realAvg[e.beatmapId] && realAvg[e.beatmapId].day; const dayCell = day ? day : day === 0 || !k ? '<span class="qs-dim">0</span>' : '<span class="qs-dim">–</span>';
-            return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played yet</span>' : k >= localCount() ? `<span style="color:#4ade80">used ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
+            return `<tr><td class="qs-map" title="${esc(e.title)}">${esc(e.title)}</td><td class="n">${rateOfEntry(e)}×</td><td class="n">${dayCell}</td><td>${!k ? '<span style="color:#f87171">Not played yet</span>' : !Object.values(realAvg[e.beatmapId].xp).some(v => v > 0) ? '<span class="qs-dim" title="Played, but this map gives no XP">No XP provided</span>' : k >= localCount() ? `<span style="color:#4ade80">used ${k}</span>` : `<span style="color:#facc15" title="Fewer plays than the Local plays option (${localCount()}): the average is rougher">used ${k}</span>`}</td></tr>`; }).join('')}
           </tbody></table></details>`;
       const cmpTable = `
         <div class="qs-tablewrap" style="margin-top:8px; max-width:560px;"><table>
@@ -1326,7 +1331,7 @@ export const mount = (meta, host) => {
         <td class="n">${clock(p.start)}</td><td class="n" title="simulated at ${p.simStrain} min">${shortTime(p.before)}</td><td class="n" title="simulated at ${p.simTries}">${p.tries.toFixed(1)}</td>
         <td class="n">${shortTime(p.strained)} / ${shortTime(p.lengthMin)}</td><td class="n">${(p.bar * 100).toFixed(0)}%</td>
         <td class="n${num(p.block ?? 1) > 0.995 ? ' qs-dim' : ''}" title="${num(p.recentPlays)} of the last 50 plays">${num(p.recentPlays)} · ×${num(p.block ?? 1).toFixed(2)}</td>
-        ${cells}<td class="n"><b>${fmt(totalOf(p))}</b></td>
+        ${cells}${totalOf(p) > 0 ? `<td class="n"><b>${fmt(totalOf(p))}</b></td>` : '<td class="n qs-dim">0</td>'}
         <td><span class="qs-pill ${p.fresh ? 'new' : 'hit'}">${p.fresh ? 'new' : 'cache'}</span>${p.passed ? '' : ` <span style="color:#fca5a5; font-weight:700;">fail${p.failAt ? ` ${Math.round(p.failAt * 100)}%` : ''}</span>`}${p.ups && p.ups.length ? ` <span class="qs-up" title="Levels up after this play: the next plays are simulated at the new level">${p.ups.map(u => `${SKILL_SHORT[u.skill]} ${u.level}`).join(', ')} ↑</span>` : ''}</td>
       </tr>`;
     }).join('');
