@@ -53,6 +53,8 @@ const keptColor = (k) => (k >= 0.995 ? '#fff' : k >= 0.7 ? '#facc15' : k >= 0.3 
 
 /** The warm-up bar, as the game draws it: zones and where it is now. Over it, where the forecast takes it:
  *  a faint band over the range it moves through, and an arrow from now to where it ends, coloured by the zones it crosses. */
+/** A label centred on x% of the bar, or anchored inward near its ends so it stays inside. */
+const inside = (x) => (x < 4 ? ' transform:none;' : x > 96 ? ' transform:translateX(-100%);' : '');
 export const barHtml = (bar, ahead) => {
   let future = '';
   // the XP cut's text, centred on its line; left out when the arrow comes close to it or past it (the red line says enough)
@@ -100,16 +102,16 @@ export const barHtml = (bar, ahead) => {
       for (const { h, s } of chosen) {
         const x = s.bar * 100, kept = xpKept(s.minutes), color = keptColor(kept);
         const tip = `After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%${kept < 0.995 ? ` · physical XP kept ×${kept.toFixed(2)}` : ''}`;
-        future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">${h}<small class="qs-u">h</small></div>`;
+        future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%; color:${color};${inside(x)}" title="${tip}">${h}<small class="qs-u">h</small></div>`;
         // past the cut, how much physical XP is lost there, under the arrow (a label with it needs more room: see above)
-        if (kept < 0.995) future += `<div class="qs-loss-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">-${Math.round((1 - kept) * 100)}%</div>`;
+        if (kept < 0.995) future += `<div class="qs-loss-label" style="left:${x.toFixed(2)}%; color:${color};${inside(x)}" title="${tip}">-${Math.round((1 - kept) * 100)}%</div>`;
         marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".9"><title>${tip}</title></line>`;
       }
       future += `<svg class="qs-arrow" viewBox="0 0 100 10" preserveAspectRatio="none"><title>After ${hours}: ${Math.round(e)}%</title><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.toFixed(2)}" x2="${e.toFixed(2)}" y1="0" y2="0">${stops.join('')}</linearGradient></defs><line x1="${a.toFixed(2)}" x2="${(e - dir * 1.2).toFixed(2)}" y1="5" y2="5" stroke="url(#${id})" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path d="M${e.toFixed(2)} 5 L${(e - dir * 1.4).toFixed(2)} 1.8 L${(e - dir * 1.4).toFixed(2)} 8.2 Z" fill="${zoneColor(end)}"/>${marks}</svg>`;
     }
     // a faded line straight down from where it ends, through the bar
     if (Math.abs(e - a) >= 1) future += `<div class="qs-endline" style="left:${e.toFixed(2)}%"></div>`;
-    future += `<div class="qs-arrow-label" style="left:${e.toFixed(2)}%" title="After ${hours}: ${Math.round(e)}%">${Math.abs(e - a) < 1 ? 'steady' : 'in'} ${ahead.hours}<small class="qs-u">h</small></div>`;
+    future += `<div class="qs-arrow-label" style="left:${e.toFixed(2)}%;${inside(e)}" title="After ${hours}: ${Math.round(e)}%">${Math.abs(e - a) < 1 ? 'steady' : 'in'} ${ahead.hours}<small class="qs-u">h</small></div>`;
   }
   return `
   <div class="qs-bar${pastCut ? ' lossy' : ''}">

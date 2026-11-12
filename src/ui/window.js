@@ -91,11 +91,11 @@ export const mount = (meta, host) => {
   let levelsView = 'regular', useRoutes = true;
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
-  let mapsOpen = null, mapsSort = 'total';
+  let mapsOpen = null, mapsSort = 'eff';
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
-    if (['regular', 'overall', 'regular-route', 'overall-route'].includes(saved.levelsView)) levelsView = saved.levelsView === 'overall-route' ? 'overall' : saved.levelsView;
+    if (['regular', 'overall', 'regular-route', 'overall-route'].includes(saved.levelsView)) levelsView = saved.levelsView.startsWith('overall') ? 'overall' : 'regular';
     if (saved.useRoutes !== undefined) useRoutes = !!saved.useRoutes;
     autoBox.checked = saved.autoRescan ?? SETTINGS.rescanOnQueueChange;
     animBox.checked = saved.animations ?? SETTINGS.animations;
@@ -215,6 +215,18 @@ export const mount = (meta, host) => {
   let scanKey = null;
   /** A change waiting to settle: its queue and when it was first seen. */
   let changedKey = null, changedAt = 0;
+  /** The character's upgrades and prestiges at the last scan, to rescan when one changes (an upgrade bought). */
+  let upgKey = null, upgChar = null, upgCheckAt = 0;
+  const upgKeyOf = (row) => SKILLS.map(sk => `${num(row[`${sk}Upgrades`])}/${num(row[`${sk}Prestige`])}`).join(',');
+  const watchUpgrades = async () => {
+    if (!root || !shown() || !upgKey || upgChar === null || autoPaused || scanning || !autoBox.checked) return;
+    const now = Date.now();
+    if (now - upgCheckAt < 5000) return;
+    upgCheckAt = now;
+    const rows = await gameRows('SELECT * FROM character WHERE id = ? LIMIT 1', [upgChar]);
+    if (!rows || !rows[0] || scanning) return;
+    if (upgKeyOf(rows[0]) !== upgKey) { upgKey = upgKeyOf(rows[0]); void scan(TEXT.status.updating, true); }
+  };
   /** A scan the player stopped (or closed the window on) isn't started again by itself until they scan. */
   let autoPaused = false;
   /** How long a change waits before the update: none when only repeats changed, a moment when the maps did. */
@@ -223,7 +235,7 @@ export const mount = (meta, host) => {
     return (maps(then) === maps(now) ? SETTINGS.rescanWaitSec.repeats : SETTINGS.rescanWaitSec.maps) * 1000;
   };
   /** The queue is checked every SETTINGS.queueCheckMs, only while the window is open. */
-  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); updateOverlays(); watchQueue(); }, SETTINGS.queueCheckMs); };
+  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); updateOverlays(); watchQueue(); void watchUpgrades(); }, SETTINGS.queueCheckMs); };
   const stopQueueWatch = () => { if (queueTimer) { clearInterval(queueTimer); queueTimer = null; } };
   const watchQueue = () => {
     if (!root || !shown() || !scanKey || autoPaused) return;
@@ -537,6 +549,7 @@ export const mount = (meta, host) => {
       if (rows === null) throw new Error('The game has not opened its database yet.');
       if (!rows.length) rows = await gameRows('SELECT * FROM character WHERE current = 1 LIMIT 1');
       const row = rows && rows[0];
+      if (row) { upgKey = upgKeyOf(row); upgChar = row.id; }
       if (!row) throw new Error('Your character was not found in the game\'s database.');
 
       const geneSource = await geneticsFor(row);
@@ -1046,8 +1059,8 @@ export const mount = (meta, host) => {
       const routesAll = readRoutes();
       const routesOn = !!routesAll && useRoutes;
       const lifetimeView = levelsView.startsWith('overall');
-      const routeView = routesOn && !lifetimeView && levelsView.endsWith('-route');
-      const viewNow = `${lifetimeView ? 'overall' : 'regular'}${routeView ? '-route' : ''}`;
+      const routeView = routesOn && !lifetimeView;
+      const viewNow = lifetimeView ? 'overall' : 'regular';
       /** A row of the table: `sk` (a skill, or 'overall'), from level L0 with x0 XP into it, to the goal level
        *  `need` (prestige, or rebirth for overall), earning `gainOf(play)` a play. `lifetime`: the skill's overall
        *  level, whose goal is just its next level. */
@@ -1247,7 +1260,7 @@ export const mount = (meta, host) => {
         ${overallHtml}
         <div class="qs-row" style="margin-bottom:4px;">
           <span class="qs-dim">${TEXT.levels.display}</span>
-          <select id="qs-lv-view" style="width:auto; field-sizing:content;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
+          <select id="qs-lv-view" style="width:auto; field-sizing:content;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall]].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
           ${routesAll ? `<label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.levels.useRoutesTip)}"><input id="qs-lv-routes" type="checkbox"${useRoutes ? ' checked' : ''} style="margin:0;"> ${TEXT.levels.useRoutes}</label>` : ''}
         </div>
         <div class="qs-dim" style="margin-bottom:6px;">${lifetimeView ? TEXT.levels.introOverall : TEXT.levels.intro}${routeView ? ` ${TEXT.levels.introRoute}` : ''}</div>
@@ -1360,52 +1373,80 @@ export const mount = (meta, host) => {
         </div>`;
     };
 
-    // ---- Maps: the queue's maps side by side, laid out like Levels (issue #3). What each is worth (XP a minute
-    // against the queue's), what it trains, what it does to strain; a row opens how it wears out ----
+    // ---- Maps: which maps are worth their time (issue #3). Ranked by XP a minute, like XP-per-hour calculators;
+    // each map's effort against its reward on a scatter, like training-load dashboards; details in a side panel ----
     const SKILL_COLOR = Object.fromEntries(SKILLS.map((sk, k) => [sk, ['#60a5fa', '#f0883e', '#4ade80', '#c084fc', '#facc15', '#f87171', '#22d3ee', '#fb7185', '#a3e635', '#e879f9', '#94a3b8'][k % 11]]));
-    const mapStats = mapIds.map((id) => {
+    const MAP_COLOR = ['#818cf8', '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#fb923c', '#a78bfa', '#2dd4bf', '#f87171', '#a3e635'];
+    const mapStats = mapIds.map((id, k) => {
       const entry = queue.entries.find(e => e.beatmapId === id);
-      const own = r.plays.filter(p => queue.entries[p.entry].beatmapId === id);
-      const bySkill = Object.fromEntries(SKILLS.map(sk => [sk, own.reduce((t, p) => t + xpOf(p, sk), 0)]));
-      const total = own.reduce((t, p) => t + totalOf(p), 0);
-      const minutes = own.reduce((t, p) => t + num(p.lengthMin), 0);
-      // XP mindblock takes off: what the blocked skills would earn without it, less what they do
-      const blockLost = own.reduce((t, p) => t + SKILLS.filter(sk => MINDBLOCK.has(sk)).reduce((u, sk) => { const b = num(p.block ?? 1); return u + (b > 0 && b < 1 ? xpOf(p, sk) / b - xpOf(p, sk) : 0); }, 0), 0);
-      const trend = own.length ? Math.round(own.reduce((t, p) => t + num(p.trend), 0) / own.length) : 0;
-      const strainPer = own.length ? own.reduce((t, p) => t + num(p.strained), 0) / own.length : 0;
-      return { id, entry, own, bySkill, total, minutes, blockLost, trend, strainPer };
+      const own = r.plays.filter(q => queue.entries[q.entry].beatmapId === id);
+      const bySkill = Object.fromEntries(SKILLS.map(sk => [sk, own.reduce((t, q) => t + xpOf(q, sk), 0)]));
+      const total = own.reduce((t, q) => t + totalOf(q), 0);
+      const minutes = own.reduce((t, q) => t + num(q.lengthMin), 0);
+      const blockLost = own.reduce((t, q) => t + SKILLS.filter(sk => MINDBLOCK.has(sk)).reduce((u, sk) => { const bl = num(q.block ?? 1); return u + (bl > 0 && bl < 1 ? xpOf(q, sk) / bl - xpOf(q, sk) : 0); }, 0), 0);
+      const trend = own.length ? own.reduce((t, q) => t + num(q.trend), 0) / own.length : 0;
+      const bar = own.length ? own.reduce((t, q) => t + num(q.bar), 0) / own.length : 0;
+      const strainPer = own.length ? own.reduce((t, q) => t + num(q.strained), 0) / own.length : 0;
+      const eff = minutes ? total / minutes : 0;
+      // what it does to your strain, in words (as training dashboards label load)
+      const tag = trend < -0.3 ? ['Rests you', '#60a5fa'] : bar >= XP_CUT ? ['Overloads', '#f87171'] : trend > 0.3 && bar < 0.4 ? ['Warms up', '#facc15'] : bar >= 0.6 ? ['Pushes', '#fb923c'] : ['Holds', '#4ade80'];
+      return { id, entry, own, bySkill, total, minutes, blockLost, strainPer, eff, tag, color: MAP_COLOR[k % MAP_COLOR.length] };
     }).filter(m => m.own.length);
     const queueTotal = mapStats.reduce((t, m) => t + m.total, 0);
     const queueMin = mapStats.reduce((t, m) => t + m.minutes, 0);
     const queuePlays = mapStats.reduce((t, m) => t + m.own.length, 0);
     const avgMin = queueMin ? queueTotal / queueMin : 0;
-    const sortBy = { total: m => m.total, eff: m => (m.minutes ? m.total / m.minutes : 0), plays: m => m.own.length, queue: m => -mapIds.indexOf(m.id) };
-    const sorted = [...mapStats].sort((a, b) => sortBy[mapsSort](b) - sortBy[mapsSort](a));
+    const sortBy = { eff: m => m.eff, total: m => m.total, plays: m => m.own.length, queue: m => -mapIds.indexOf(m.id) };
+    const sorted = [...mapStats].sort((x, y) => sortBy[mapsSort](y) - sortBy[mapsSort](x));
     const vsAvg = (v) => { const d = avgMin ? v / avgMin - 1 : 0; return Math.abs(d) < 0.005 ? '' : `<span style="color:${d > 0 ? '#4ade80' : '#f87171'}; font-size:10px;">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>`; };
-    /** The skills a map trains, as one bar: a piece a skill, its name under it where it fits. */
-    const skillBar = (m) => {
-      const parts = SKILLS.filter(sk => m.bySkill[sk] > 0).sort((a, b) => m.bySkill[b] - m.bySkill[a]);
-      return `<div class="qs-mp-bar">${parts.map(sk => { const f = m.bySkill[sk] / m.total; return `<div style="flex:${f.toFixed(4)};" title="${SKILL_NAMES[sk]}: ${fmt(m.bySkill[sk])} (${Math.round(f * 100)}%)"><i style="background:${SKILL_COLOR[sk]};"></i>${f >= 0.12 ? `<span>${SKILL_SHORT[sk]}</span>` : ''}</div>`; }).join('')}</div>`;
+    const short = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+    /** XP a play over the look-ahead, tiny: flat is a map that keeps giving, falling one that wears out. */
+    const spark = (m) => {
+      const v = m.own.map(totalOf), hi = Math.max(...v), lo = Math.min(...v), W = 70, H = 16;
+      const pts = v.map((x, i) => `${(v.length > 1 ? i / (v.length - 1) * W : W / 2).toFixed(1)},${(hi > lo ? H - 2 - (x - lo) / (hi - lo) * (H - 4) : H / 2).toFixed(1)}`).join(' ');
+      const drop = v[0] > 0 ? v[v.length - 1] / v[0] - 1 : 0;
+      return `<svg width="${W}" height="${H}" style="vertical-align:middle;"><polyline points="${pts}" fill="none" stroke="${drop < -0.1 ? '#f87171' : '#9ca3af'}" stroke-width="1.4"/></svg>`;
     };
+    const chips = (m) => SKILLS.filter(sk => m.bySkill[sk] > 0).sort((x, y) => m.bySkill[y] - m.bySkill[x]).slice(0, 3).map(sk => `<span class="qs-mp-chip" style="border-color:${SKILL_COLOR[sk]}; color:${SKILL_COLOR[sk]};" title="${SKILL_NAMES[sk]}: ${fmt(m.bySkill[sk])}">${SKILL_SHORT[sk]} ${Math.round(m.bySkill[sk] / m.total * 100)}%</span>`).join('');
+    // reward (XP a minute) against effort (strain a play): top left is worth it and easy on you
+    const Ws = 760, Hs = 150, ps = 26;
+    const maxEff = Math.max(1, ...mapStats.map(m => m.eff)) * 1.1, maxStr = Math.max(1, ...mapStats.map(m => m.strainPer)) * 1.1;
+    const sx = (v) => ps + v / maxStr * (Ws - 2 * ps), sy = (v) => Hs - ps + 8 - v / maxEff * (Hs - ps - 8);
+    const scatter = `<svg viewBox="0 0 ${Ws} ${Hs}" width="100%" height="${Hs}" style="display:block; background:#0b0b11; border-radius:4px;">
+      <line x1="${ps}" x2="${Ws - ps}" y1="${sy(avgMin).toFixed(1)}" y2="${sy(avgMin).toFixed(1)}" stroke="#374151" stroke-dasharray="3 3"/><text x="${Ws - ps}" y="${(sy(avgMin) - 3).toFixed(1)}" fill="#6b7280" font-size="9" text-anchor="end">queue average</text>
+      <text x="${ps}" y="12" fill="#6b7280" font-size="9">↑ XP a minute</text><text x="${Ws - ps}" y="${Hs - 4}" fill="#6b7280" font-size="9" text-anchor="end">strain a play →</text>
+      ${mapStats.map(m => `<g class="qs-mp-dot" data-id="${m.id}" style="cursor:pointer;"><circle cx="${sx(m.strainPer).toFixed(1)}" cy="${sy(m.eff).toFixed(1)}" r="${mapsOpen === m.id ? 7 : 5}" fill="${m.color}" stroke="${mapsOpen === m.id ? '#fff' : 'none'}"><title>${esc(m.entry.title)}: ${fmt(m.eff)} XP/min, ${shortTime(m.strainPer)} strain a play</title></circle><text x="${(sx(m.strainPer) + 8).toFixed(1)}" y="${(sy(m.eff) + 3).toFixed(1)}" fill="#9ca3af" font-size="9">${esc(short(m.entry.title.replace(/^.* - /, ''), 22))}</text></g>`).join('')}
+    </svg>`;
+    const openMap = mapStats.find(m => m.id === mapsOpen);
+    const panel = openMap ? `<div class="qs-mp-panel">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><i style="width:9px; height:9px; border-radius:2px; background:${openMap.color};"></i><b style="color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(openMap.entry.title)}">${esc(openMap.entry.title)}</b><button type="button" class="qs-plain qs-mp-close" style="margin-left:auto;" title="Close">✕</button></div>
+        <div class="qs-facts" style="margin-bottom:6px;">
+          <span class="qs-dim">XP a minute</span><span><b>${fmt(openMap.eff)}</b> ${vsAvg(openMap.eff)} <span class="qs-dim">= ${fmt(openMap.total / openMap.own.length)} a play ÷ ${shortTime(openMap.minutes / openMap.own.length)}</span></span>
+          <span class="qs-dim">Share</span><span>${fmt(openMap.total)} XP, ${queueTotal ? Math.round(openMap.total / queueTotal * 100) : 0}% of the queue · ${openMap.own.length} plays</span>
+          <span class="qs-dim">Strain</span><span><span style="color:${openMap.tag[1]};">${openMap.tag[0]}</span> · ${shortTime(openMap.strainPer)} a play</span>
+          ${openMap.blockLost >= 1 ? `<span class="qs-dim">Mindblock</span><span style="color:#f87171;">−${fmt(openMap.blockLost)} XP over the look-ahead</span>` : ''}
+        </div>
+        ${cardOf(openMap.id)}
+      </div>` : '';
     const mapsTab = mapStats.length ? `
       <div class="qs-lv-ov" style="margin-bottom:8px;">
-        <div class="qs-lv-ovline"><b>${fmt(queueTotal)} XP</b><span class="qs-faint">·</span><span><b>${fmt(queueTotal / Math.max(1e-9, spanH))}</b> <span class="qs-dim">XP/h</span></span><span class="qs-faint">·</span><span><b>${fmt(avgMin)}</b> <span class="qs-dim">XP/min average</span></span><span class="qs-faint">·</span><span><b>${queuePlays}</b> <span class="qs-dim">plays in the next ${durH(spanH * 3600)}</span></span></div>
+        <div class="qs-lv-ovline"><b>${fmt(avgMin)} XP/min</b><span class="qs-faint">·</span><span><b>${fmt(queueTotal)}</b> <span class="qs-dim">XP</span></span><span class="qs-faint">·</span><span><b>${fmt(queueTotal / Math.max(1e-9, spanH))}</b> <span class="qs-dim">XP/h</span></span><span class="qs-faint">·</span><span><b>${queuePlays}</b> <span class="qs-dim">plays in the next ${durH(spanH * 3600)}</span></span></div>
       </div>
-      <div class="qs-row" style="margin-bottom:4px;"><span class="qs-dim">Sort</span>
-        <select id="qs-mp-sort" style="width:auto; field-sizing:content;">${[['total', 'Total XP'], ['eff', 'XP a minute'], ['plays', 'Plays'], ['queue', 'Queue order']].map(([v, l]) => `<option value="${v}"${v === mapsSort ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="qs-dim" style="margin-bottom:6px;">What each map is worth, what it trains and what it does to your strain. Click one for more.</div>
-      <table class="qs-lv"><thead><tr><th>Map</th><th class="n">XP</th><th class="n" title="XP a minute of the map, against the queue's average: fair between short and long maps">XP/min</th><th class="n" title="Where each play pushes your strain, and the minutes of strain it adds">Strain</th><th style="width:40%;">Trains</th></tr></thead><tbody>
-        ${sorted.map(m => {
-          const open = mapsOpen === m.id, eff = m.minutes ? m.total / m.minutes : 0;
-          return `<tr class="qs-lv-row qs-mp-row" data-id="${m.id}">
-            <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span><span class="qs-mp-name" title="${esc(m.entry.title)}">${esc(m.entry.title)}</span><span class="qs-sub">${m.entry.lockedRate ?? ctx.rate}× · ${m.own.length} play${m.own.length === 1 ? '' : 's'} · Tries ${num(r.memory[m.id]).toFixed(1)}</span></td>
-            <td class="n"><b>${fmt(m.total)}</b> <span class="qs-dim">${queueTotal ? Math.round(m.total / queueTotal * 100) : 0}%</span></td>
-            <td class="n">${fmt(eff)} ${vsAvg(eff)}</td>
-            <td class="n">${arrows(m.trend)} <span class="qs-dim">${shortTime(m.strainPer)}</span></td>
-            <td class="qs-lv-barcell">${skillBar(m)}</td></tr>
-            ${open ? `<tr><td colspan="5">${m.blockLost >= 1 ? `<div class="qs-dim" style="margin:2px 0 4px 16px;">Mindblock takes <b style="color:#f87171;">${fmt(m.blockLost)}</b> XP from this map over the look-ahead.</div>` : ''}${cardOf(m.id)}</td></tr>` : ''}`;
-        }).join('')}
-      </tbody></table>` : '';
+      ${scatter}
+      <div class="qs-row" style="margin:8px 0 4px;"><span class="qs-dim">Sort</span>
+        <select id="qs-mp-sort" style="width:auto; field-sizing:content;">${[['eff', 'XP a minute'], ['total', 'Total XP'], ['plays', 'Plays'], ['queue', 'Queue order']].map(([v, l]) => `<option value="${v}"${v === mapsSort ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span class="qs-dim" style="margin-left:auto;">Estimates from the forecast. Click a map for more.</span></div>
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        <table class="qs-lv" style="flex:1; min-width:0;"><thead><tr><th>Map</th><th class="n" title="XP a minute of the map, against the queue's average: fair between short and long maps">XP/min</th><th title="XP a play over the look-ahead: falling means it wears out">Trend</th><th>Strain</th><th>Trains</th></tr></thead><tbody>
+          ${sorted.map(m => `<tr class="qs-lv-row qs-mp-row${mapsOpen === m.id ? ' on' : ''}" data-id="${m.id}">
+            <td class="qs-lv-skill"><i style="display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; background:${m.color};"></i><span class="qs-mp-name" title="${esc(m.entry.title)}">${esc(m.entry.title)}</span><span class="qs-sub">${m.entry.lockedRate ?? ctx.rate}× · ${m.own.length} plays · ${fmt(m.total)} XP</span></td>
+            <td class="n"><b>${fmt(m.eff)}</b> ${vsAvg(m.eff)}</td>
+            <td>${spark(m)}</td>
+            <td><span style="color:${m.tag[1]};">${m.tag[0]}</span></td>
+            <td>${chips(m)}</td></tr>`).join('')}
+        </tbody></table>
+        ${panel}
+      </div>` : '';
     // ---- Diagnostics: a health line per input, and everything as text to paste (no character id or name) ----
     const diag = (() => {
       const st = r.simStats || { ms: 0, slowest: 0, busy: 0, failed: 0 };
@@ -1519,7 +1560,7 @@ export const mount = (meta, host) => {
     const viewSel = outEl.querySelector('#qs-lv-view');
     if (viewSel) viewSel.onchange = () => { if (!viewSel.value) return; levelsView = viewSel.value; savePrefs(); renderResult(...lastResult); };
     const routesBox = outEl.querySelector('#qs-lv-routes');
-    if (routesBox) routesBox.onchange = () => { useRoutes = routesBox.checked; savePrefs(); renderResult(...lastResult); };
+    if (routesBox) routesBox.onchange = () => { useRoutes = routesBox.checked; if (useRoutes) levelsView = 'regular'; savePrefs(); renderResult(...lastResult); };
     const localList = outEl.querySelector('.qs-local-list');
     if (localList) localList.addEventListener('toggle', () => { localOpen = localList.open; centerVertically(); });
     for (const btn of outEl.querySelectorAll('.qs-tabs button')) {
@@ -1530,6 +1571,9 @@ export const mount = (meta, host) => {
     for (const btn of outEl.querySelectorAll('.qs-page')) {
       btn.onclick = () => { svPage += Number(btn.dataset.step); renderResult(...lastResult); };
     }
+    for (const g of outEl.querySelectorAll('.qs-mp-dot')) g.onclick = () => { const id = Number(g.dataset.id); mapsOpen = mapsOpen === id ? null : id; renderResult(...lastResult); };
+    const mpClose = outEl.querySelector('.qs-mp-close');
+    if (mpClose) mpClose.onclick = () => { mapsOpen = null; renderResult(...lastResult); };
     for (const tr of outEl.querySelectorAll('.qs-mp-row')) tr.onclick = () => { const id = Number(tr.dataset.id); mapsOpen = mapsOpen === id ? null : id; renderResult(...lastResult); centerVertically(); };
     const mpSort = outEl.querySelector('#qs-mp-sort');
     if (mpSort) mpSort.onchange = () => { mapsSort = mpSort.value; renderResult(...lastResult); };
