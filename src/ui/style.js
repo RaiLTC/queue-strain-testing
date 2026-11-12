@@ -55,7 +55,8 @@ export const CSS = `
 #qs-window.qs-noanim .qs-lv-seg.shift > i.gain { background:var(--qs-shift); opacity:.9; }
 /* without animations, a completed piece keeps the plain progress colour (only the prestige piece stays pink) */
 #qs-window.qs-noanim .qs-lg-complete { display:none; }
-#qs-window .qs-lv-overall > td { border-bottom:1px solid #2b2b3a; }
+#qs-window .qs-lv-ov { padding:4px 8px 16px; margin-bottom:8px; border-bottom:1px solid #2b2b3a; }
+#qs-window .qs-lv-ovline { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; font-size:12px; margin-bottom:2px; font-variant-numeric:tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   #qs-window *, #qs-window *::before, #qs-window *::after { animation:none !important; transition:none !important; }
   #qs-window .qs-lv-seg.shift > i.gain { background:var(--qs-shift); opacity:.9; }

@@ -959,7 +959,12 @@ export const mount = (meta, host) => {
             <span class="qs-dim">${x.overall ? TEXT.levels.toRebirth : TEXT.levels.toPrestige}</span><span>${x.toPrestige ? fmt(x.toPrestige) : '–'}</span></div></div>
         </div></td></tr>`;
       };
-      const rowsHtml = (overallRow ? [overallRow, ...skillRows] : skillRows).map((x) => {
+      // the overall level sits on its own above the skills: one line, then its bar. It doesn't open.
+      const overallHtml = overallRow ? `<div class="qs-lv-ov">
+          <div class="qs-lv-ovline"><b>${TEXT.levels.overall} Lv ${overallRow.start.toFixed(2)}</b><span class="qs-faint">·</span><span><b>${overallRow.perH > 0 ? fmt(overallRow.perH) : '–'}</b> <span class="qs-dim">${TEXT.levels.xph}</span></span><span class="qs-faint">·</span><span title="${tx(TEXT.levels.rebirthAt, { n: overallRow.need })}${overallRow.toPrestige ? `: ${tx(TEXT.levels.xpToGo, { xp: fmt(overallRow.toPrestige) })}` : ''}"><span class="qs-dim">${TEXT.levels.rebirth}</span> ${prestigeText(overallRow)}</span></div>
+          ${levelsBar(overallRow)}
+        </div>` : '';
+      const rowsHtml = skillRows.map((x) => {
         const open = levelsOpen.has(x.sk);
         return `<tr class="qs-lv-row${open ? ' open' : ''}${x.overall ? ' qs-lv-overall' : ''}" data-skill="${x.sk}">
           <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span>${x.overall ? TEXT.levels.overall : SKILL_NAMES[x.sk]}<span class="qs-sub">Lv ${x.start.toFixed(2)}</span></td>
@@ -971,6 +976,7 @@ export const mount = (meta, host) => {
       levelsTab = `
       <div class="qs-card">
         <div class="qs-h">${TEXT.levels.title}</div>
+        ${overallHtml}
         <div class="qs-dim" style="margin-bottom:6px;">${TEXT.levels.intro}</div>
         <table class="qs-lv">
           <thead><tr><th>${TEXT.levels.skill}</th><th class="n">${TEXT.levels.xph}</th><th class="n">${TEXT.levels.prestige}</th><th style="padding-left:16px;">${TEXT.levels.bar}</th></tr></thead>
