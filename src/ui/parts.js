@@ -68,7 +68,11 @@ export const barHtml = (bar, ahead) => {
     if (Math.abs(e - a) >= 1) { cutText = reach >= cut - 12 ? 'none' : 'center'; pastCut = reach >= cut; }
     /** Whether an hour label at x would run into the XP cut's text. */
     const hitsCut = (x) => cutText === 'center' && Math.abs(x - cut) < 9;
-    if (Math.abs(e - a) >= 1) {
+    // the arrow only once it's at least halfway from now to the next state mark it heads for (before that, just the end line)
+    const marksAt = [...BAR_ZONES.map(z => z * 100), 0, 100];
+    const nextMark = dir > 0 ? Math.min(...marksAt.filter(m => m > a + 1e-6)) : Math.max(...marksAt.filter(m => m < a - 1e-6));
+    const showArrow = Math.abs(e - a) >= 1 && Math.abs(e - a) >= Math.abs(nextMark - a) / 2;
+    if (showArrow) {
       // the line's colour follows the zones it passes through
       const stops = [];
       for (let k = 0; k <= 20; k++) { const o = k / 20; stops.push(`<stop offset="${o}" stop-color="${zoneColor((a + (e - a) * o) / 100)}"/>`); }
@@ -118,7 +122,7 @@ export const barHtml = (bar, ahead) => {
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
     ${ahead && ahead.samples.length > 1 ? '<div class="qs-at"></div>' : ''}
   </div>
-  ${ahead && ahead.samples.length > 1 ? `<div class="qs-slide"><span class="qs-dim">now</span><input type="range" class="qs-slide-in" min="0" max="${Math.round(ahead.hours * 3600)}" step="${ahead.hours > 12 ? 3600 : 1800}"><span class="qs-dim">${ahead.hours}<small class="qs-u">h</small></span><span class="qs-slide-text"></span></div>` : ''}`;
+  ${ahead && ahead.samples.length > 1 ? `<div class="qs-slide"><span class="qs-dim">off</span><input type="range" class="qs-slide-in" min="0" max="${Math.round(ahead.hours * 3600)}" step="${ahead.hours > 12 ? 3600 : 1800}"><span class="qs-dim">${ahead.hours}<small class="qs-u">h</small></span><span class="qs-slide-text"></span></div>` : ''}`;
 };
 
 /** Where the forecast is at `t` seconds from now: the bar and the minutes of strain, between the two samples around it. */
@@ -129,23 +133,26 @@ const aheadAt = (ahead, t) => {
   const p = s[i - 1], q = s[i], f = (t - p.t) / Math.max(1, q.t - p.t);
   return { bar: p.bar + (q.bar - p.bar) * f, minutes: p.minutes + (q.minutes - p.minutes) * f };
 };
-/** The slider's time, kept while the same forecast is redrawn and set back to 2 hours for a new one. */
-let slideSec = 0, slideFor = null;
+/** The slider's time: 0 is off (no ghost needle). Kept while the forecast is redrawn. */
+let slideSec = 0;
 /** Wires the time slider under a bar drawn by barHtml: dragging it moves a ghost needle to where the bar is then,
  *  and says so next to it. */
 export const wireSlider = (box, ahead) => {
   const input = box.querySelector('.qs-slide-in'), ghost = box.querySelector('.qs-at'), text = box.querySelector('.qs-slide-text');
   if (!input || !ghost || !ahead) return;
-  if (slideFor !== ahead) { slideFor = ahead; slideSec = Math.min(7200, ahead.hours * 3600); }
+  slideSec = Math.min(slideSec, ahead.hours * 3600);
   input.value = String(slideSec);
+  const barEl = box.querySelector('.qs-bar');
   const update = () => {
     slideSec = Number(input.value);
     const at = aheadAt(ahead, slideSec), kept = xpKept(at.minutes);
     ghost.style.left = `${(at.bar * 100).toFixed(2)}%`;
     ghost.style.display = slideSec > 0 ? '' : 'none';
+    // while it's on, the forecast arrow and its end line step aside for the ghost needle
+    if (barEl) barEl.classList.toggle('sliding', slideSec > 0);
     text.innerHTML = slideSec > 0
       ? `After ${durH(slideSec)}: <b>${Math.round(at.bar * 100)}%</b> · ${STAGES[stageOf(at.bar)][0]}${kept < 0.995 ? ` · <span style="color:${keptColor(kept)}">-${Math.round((1 - kept) * 100)}% physical XP</span>` : ''}`
-      : 'Now';
+      : '';
   };
   input.addEventListener('input', update);
   update();

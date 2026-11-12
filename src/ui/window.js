@@ -96,7 +96,7 @@ export const mount = (meta, host) => {
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
-    if (['regular', 'overall', 'regular-route', 'overall-route'].includes(saved.levelsView)) levelsView = saved.levelsView;
+    if (['regular', 'overall', 'regular-route', 'overall-route'].includes(saved.levelsView)) levelsView = saved.levelsView === 'overall-route' ? 'overall' : saved.levelsView;
     if (saved.useRoutes !== undefined) useRoutes = !!saved.useRoutes;
     autoBox.checked = saved.autoRescan ?? SETTINGS.rescanOnQueueChange;
     animBox.checked = saved.animations ?? SETTINGS.animations;
@@ -482,13 +482,24 @@ export const mount = (meta, host) => {
   optsBox.addEventListener('change', () => { updateOverlays(); savePrefs(); });
   chatBox.addEventListener('change', () => { updateOverlays(); savePrefs(); });
 
+  /** The state's name over the bar, at the mark where that state begins (Sweet Spot in the middle of its band, the
+   *  ends at the bar's ends), with the next play's arrows on the side it heads to (inward at the ends). */
+  const STATE_AT = { cold: 0, warming: 20, peak: 50, pushing: 80, fatigued: 100 };
+  const stateLabel = (c, name) => {
+    const at = STATE_AT[c.stage] ?? 50, edge = at <= 0 ? 'left' : at >= 100 ? 'right' : '';
+    const tr = c.trend ? `<span class="qs-trend" title="Where the next play pushes it">${arrows(c.trend)}</span>` : '';
+    const right = edge === 'left' || (edge !== 'right' && c.trend > 0);
+    const nm = `<span style="color:${STAGE_COLOR[c.stage]}">${name}</span>`;
+    const pos = edge === 'left' ? 'left:0;' : edge === 'right' ? 'right:0;' : `left:${at}%; transform:translateX(-50%);`;
+    return `<span class="qs-state" style="${pos}">${right ? nm + tr : tr + nm}</span>`;
+  };
   const renderNow = (c) => {
     const [name, hint] = STAGES[c.stage];
     nowEl.innerHTML = `
       <div class="qs-h">Strain Status</div>
       <div><b>${name}</b> - ${hint}</div>
       <div>${minText(c.minutes)} of strain / ${Math.round(c.warm * 100)}% warm / sweet spot from ${Math.round(c.knots[1])} minutes / <span style="color:#f87171">XP cut at ${Math.round(c.knots[3])} minutes</span></div>
-      <div class="qs-bar-labels"><span style="color:${STAGE_COLOR[c.stage]}">${name}</span>${c.trend ? `<span class="qs-trend" title="Where the next play pushes it">${arrows(c.trend)}</span>` : ''}</div>
+      <div class="qs-bar-labels">${stateLabel(c, name)}</div>
       ${barHtml(c.bar, c.ahead)}
       ${c.note ? `<div class="qs-dim">${c.note}</div>` : ''}`;
     wireSlider(nowEl, c.ahead);
@@ -669,7 +680,7 @@ export const mount = (meta, host) => {
             <div class="qs-con-line">&gt; your last ${data.played.length} plays, as the game stored them (newest first). These should match #logs.</div>
             <div class="qs-con-line">&gt; ${consoleLive ? `live: checked ${clockOf(data.checkedAt)}` : 'paused'}${data.lastNewAt ? ` · ${data.fresh} new play${data.fresh === 1 ? '' : 's'} at ${clockOf(data.lastNewAt)}, marked until newer plays arrive` : ' · no new plays since the console opened'}</div>
             ${consoleTable(data.played, data.fresh)}` : `
-            <div class="qs-con-line">&gt; calibration: each real play simulated again as it was played (its rate, mods, Tries and levels then; strain is now's)</div>
+            <div class="qs-con-line">&gt; calibration: real plays re-simulated</div>
             ${consoleTable(data.calibRows)}
             <div class="qs-con-line" style="margin-top:10px;">&gt; per skill: Factor = Real ÷ Simulator</div>
             ${consoleTable(data.calibSummary)}`}
@@ -1041,7 +1052,7 @@ export const mount = (meta, host) => {
       const routesAll = readRoutes();
       const routesOn = !!routesAll && useRoutes;
       const lifetimeView = levelsView.startsWith('overall');
-      const routeView = routesOn && levelsView.endsWith('-route');
+      const routeView = routesOn && !lifetimeView && levelsView.endsWith('-route');
       const viewNow = `${lifetimeView ? 'overall' : 'regular'}${routeView ? '-route' : ''}`;
       /** A row of the table: `sk` (a skill, or 'overall'), from level L0 with x0 XP into it, to the goal level
        *  `need` (prestige, or rebirth for overall), earning `gainOf(play)` a play. `lifetime`: the skill's overall
@@ -1169,7 +1180,7 @@ export const mount = (meta, host) => {
           if (next && here.includes(next)) {
             const f = (next.level - a2) / (b2 - a2);
             above = k === 0 && f < 0.05;
-            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${k === n - 1 && f > 0.9 ? ' transform:translateX(-100%);' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
+            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${k === n - 1 && f > 0.9 ? ' transform:translateX(calc(-100% - 4px));' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
           }
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
@@ -1230,7 +1241,7 @@ export const mount = (meta, host) => {
       const rowsHtml = skillRows.map((x) => {
         const open = levelsOpen.has(x.sk);
         return `<tr class="qs-lv-row${open ? ' open' : ''}${x.overall ? ' qs-lv-overall' : ''}" data-skill="${x.sk}">
-          <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span>${x.overall ? TEXT.levels.overall : SKILL_NAMES[x.sk]}<span class="qs-sub">Lv ${x.start.toFixed(2)}</span></td>
+          <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span>${x.overall ? TEXT.levels.overall : SKILL_NAMES[x.sk]}<span class="qs-sub">${x.start.toFixed(2)}</span></td>
           <td class="n qs-lv-xph">${x.perH > 0 ? `<b>${fmt(x.perH)}</b>${x.overall ? '' : `<span class="qs-faint"> ${shareOf(x)}%</span>`}` : '<span class="qs-faint">–</span>'}</td>
           <td class="n qs-lv-pres" title="${x.overall ? tx(TEXT.levels.rebirthAt, { n: x.need }) : ''}${x.toPrestige ? `${x.overall ? ': ' : ''}${tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) })}` : ''}">${x.overall ? `<span class="qs-faint">${TEXT.levels.rebirth} </span>` : ''}${prestigeText(x)}</td>
           <td class="qs-lv-barcell">${levelsBar(x)}</td>
@@ -1242,7 +1253,7 @@ export const mount = (meta, host) => {
         ${overallHtml}
         <div class="qs-row" style="margin-bottom:4px;">
           <span class="qs-dim">${TEXT.levels.display}</span>
-          <select id="qs-lv-view" style="width:auto; field-sizing:content;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute], ['overall-route', TEXT.levels.viewOverallRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
+          <select id="qs-lv-view" style="width:auto; field-sizing:content;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
           ${routesAll ? `<label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.levels.useRoutesTip)}"><input id="qs-lv-routes" type="checkbox"${useRoutes ? ' checked' : ''} style="margin:0;"> ${TEXT.levels.useRoutes}</label>` : ''}
         </div>
         <div class="qs-dim" style="margin-bottom:6px;">${lifetimeView ? TEXT.levels.introOverall : TEXT.levels.intro}${routeView ? ` ${TEXT.levels.introRoute}` : ''}</div>
@@ -1283,7 +1294,7 @@ export const mount = (meta, host) => {
     const calibTotal = calibSkills.reduce((t, sk) => ({ real: t.real + r.calib.real[sk], est: t.est + estOf(sk) }), { real: 0, est: 0 });
     const calibPanel = `
       <div class="qs-card"><div class="qs-h">Calibration</div>
-        <div class="qs-dim" style="margin-bottom:4px;">Each of your last plays of these maps${r.calib ? ` (${r.calib.plays})` : ''} at the queue's rate, simulated again as it was played (its rate, mods, Tries, levels and mindblock then; strain is now's), against what it really earned. The simulator side has each play's mindblock and your genetics on it. ${medals.ok ? `Your medals are ×${medals.multiplier.toFixed(3)}: a factor close to that means the add-on's numbers match your real plays.` : 'The server couldn\'t be reached, so these factors stand in for your medals.'}</div>
+        <div class="qs-dim" style="margin-bottom:4px;">Your last plays${r.calib ? ` (${r.calib.plays})` : ''} re-simulated vs real XP. ${medals.ok ? `Factor near ×${medals.multiplier.toFixed(3)} (medals) = accurate.` : 'No server: factors stand in for medals.'}</div>
         ${calibSkills.length ? `<div style="overflow-x:auto;"><table><thead><tr><th>Skill</th><th class="n">Plays</th><th class="n">Real</th><th class="n" title="The add-on's estimate for these same plays: the simulator's XP with mindblock, your genetics and your medals">With your bonuses</th><th class="n" title="the lowest and highest single-play factor">Range</th><th class="n" title="Real ÷ the simulator with mindblock and genetics, before medals: close to your medals is right">Factor</th><th class="n" title="${MATCH_HELP}" style="cursor:help;">Match ⓘ</th></tr></thead><tbody>
           ${calibSkills.map(sk => `<tr><td>${SKILL_NAMES[sk]}</td><td class="n">${r.calib.n[sk]}</td><td class="n">${fmt(r.calib.real[sk])}</td><td class="n">${estOf(sk) > 0 ? fmt(estOf(sk)) : '<span class="qs-dim">–</span>'}</td><td class="n qs-dim">${r.calib.low[sk].toFixed(2)}–${r.calib.high[sk].toFixed(2)}</td><td class="n"><b>×${factorShown(sk).toFixed(2)}</b></td>${matchCell(r.calib.real[sk], estOf(sk))}</tr>`).join('')}
           <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td></td><td class="n"><b>${fmt(calibTotal.real)}</b></td><td class="n">${calibTotal.est > 0 ? `<b>${fmt(calibTotal.est)}</b>` : '<span class="qs-dim">–</span>'}</td><td></td><td></td>${matchCell(calibTotal.real, calibTotal.est)}</tr>
@@ -1531,7 +1542,7 @@ export const mount = (meta, host) => {
           const played = rows.map(x => {
             const g = parseGains(x.gains);
             return {
-              Time: new Date(num(x.playedAt)).toLocaleString(), Map: titles[x.beatmapId] || `#${x.beatmapId}`, Rate: num(x.rate) || 1, Mods: x.mods || '',
+              Time: new Date(num(x.playedAt)).toLocaleString(), Map: `#${x.beatmapId}${titles[x.beatmapId] ? ` ${titles[x.beatmapId]}` : ''}`, Rate: num(x.rate) || 1, Mods: x.mods || '',
               'Acc %': x.accuracy !== null && x.accuracy !== undefined ? `${(num(x.accuracy) * (num(x.accuracy) <= 1 ? 100 : 1)).toFixed(2)}%` : '', pp: Math.round(num(x.pp)),
               ...Object.fromEntries(SKILLS.map(sk => [SKILL_NAMES[sk], Math.round(num(g[sk]))])),
             };
