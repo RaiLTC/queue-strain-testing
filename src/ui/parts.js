@@ -50,6 +50,8 @@ const zoneColor = (b) => (b < BAR_ZONES[0] ? '#e5e7eb' : b < BAR_ZONES[1] ? '#fa
  *  a faint band over the range it moves through, and an arrow from now to where it ends, coloured by the zones it crosses. */
 export const barHtml = (bar, ahead) => {
   let future = '';
+  // the XP cut's text: centred on its line; beside it (to the right) when the arrow ends just short of it; gone when the arrow reaches it
+  let cutText = 'center';
   if (ahead && ahead.samples.length > 1) {
     const later = ahead.samples.slice(1).map(s => s.bar);
     const lo = Math.min(...later), hi = Math.max(...later);
@@ -57,15 +59,19 @@ export const barHtml = (bar, ahead) => {
     const hours = `${ahead.hours} hour${ahead.hours === 1 ? '' : 's'}`;
     future += `<div class="qs-band" style="left:${(lo * 100).toFixed(2)}%; width:${Math.max(0.6, (hi - lo) * 100).toFixed(2)}%" title="Where it moves in the next ${hours}: ${Math.round(lo * 100)}% to ${Math.round(hi * 100)}%"></div>`;
     const a = bar * 100, e = end * 100, dir = e >= a ? 1 : -1;
+    const cut = XP_CUT * 100, reach = Math.max(a, e);
+    if (Math.abs(e - a) >= 1) cutText = reach >= cut ? 'none' : reach >= cut - 12 ? 'side' : 'center';
+    /** Whether an hour label at x would run into the XP cut's text. */
+    const hitsCut = (x) => (cutText === 'center' ? Math.abs(x - cut) < 9 : cutText === 'side' ? x > cut - 3 && x < cut + 16 : false);
     if (Math.abs(e - a) >= 1) {
       // the line's colour follows the zones it passes through
       const stops = [];
       for (let k = 0; k <= 20; k++) { const o = k / 20; stops.push(`<stop offset="${o}" stop-color="${zoneColor((a + (e - a) * o) / 100)}"/>`); }
       const id = `qs-arrow-${Math.random().toString(36).slice(2, 8)}`;
       // a small mark where the bar is after each full hour (the last one is the arrowhead)
-      // with its hour written above it, unless that would overlap a label already placed or the XP cut's
+      // with its hour written above it, unless that would overlap a label already placed or the XP cut's text
       let marks = '';
-      const placed = [XP_CUT * 100];
+      const placed = [];
       // marks every hour on a long arrow, every few hours on a short one: about one per 6% of the bar it spans
       const room = Math.floor(Math.abs(e - a) / 6);
       const step = [1, 2, 3, 4, 6, 8, 12, 24].find(n => Math.ceil(ahead.hours / n) - 1 <= room) ?? 24;
@@ -73,7 +79,7 @@ export const barHtml = (bar, ahead) => {
         const s = ahead.samples.find(x => x.t >= h * 3600);
         if (!s) break;
         const x = s.bar * 100;
-        if (placed.every((p, i) => Math.abs(p - x) >= (i === 0 ? 9 : 4))) {
+        if (!hitsCut(x) && placed.every(p => Math.abs(p - x) >= 4)) {
           placed.push(x);
           future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%">${h}<small class="qs-u">h</small></div>`;
         }
@@ -92,7 +98,7 @@ export const barHtml = (bar, ahead) => {
     <div class="qs-tick" style="left:${BAR_ZONES[0] * 100}%"></div>
     <div class="qs-tick" style="left:${BAR_ZONES[1] * 100}%"></div>
     <div class="qs-cut" style="left:${XP_CUT * 100}%" title="300 min of strain: XP gains start being cut"></div>
-    <div class="qs-cut-label" style="left:${XP_CUT * 100}%">300 min · XP cut</div>
+    ${cutText === 'none' ? '' : `<div class="qs-cut-label${cutText === 'side' ? ' side' : ''}" style="left:${XP_CUT * 100}%">300 min · XP cut</div>`}
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
   </div>`;
 };
