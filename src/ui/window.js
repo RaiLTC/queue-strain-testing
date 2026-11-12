@@ -1161,15 +1161,15 @@ export const mount = (meta, host) => {
           const at = x.markAt[b2];
           const goal = !x.lifetime && last && x.start >= 100 && b2 === x.need;
           // the route's upgrades bought inside this piece: a line each. The next one also gets its number and the time
-          // until it ("#4 2h 10m"), under the bar, or above it when it sits in the bar's first 5% (by the start mark)
+          // until it ("#4 2h 10m"), under the bar, or above it when it sits in the first 5% of the bar's first piece (measured like the progress, from its start mark)
           const here = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9);
           const leftOf = (ev) => `${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%`;
           const upMarks = here.map(ev => `<b class="qs-lv-up" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}"></b>`).join('');
           let upLabels = '';
           if (next && here.includes(next)) {
-            const f = (next.level - a2) / (b2 - a2), whole = (k + f) / n;
-            above = whole < 0.05;
-            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${whole > 0.9 ? ' transform:translateX(-100%);' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
+            const f = (next.level - a2) / (b2 - a2);
+            above = k === 0 && f < 0.05;
+            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${k === n - 1 && f > 0.9 ? ' transform:translateX(-100%);' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
           }
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
