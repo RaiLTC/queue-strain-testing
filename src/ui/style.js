@@ -198,6 +198,14 @@ export const CSS = `
 #qs-window .qs-needle { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:#fff; border-radius:2px; box-shadow:0 0 4px #000; z-index:1; }
 #qs-window .qs-needle::after { content:''; position:absolute; left:-4px; top:22px; border:6px solid transparent; border-bottom:8px solid #fff; border-top:none; }
 #qs-window .qs-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+/* the Window group in the options: folds open and shut; the fade eases in and out */
+#qs-window .qs-group { margin-top:6px; }
+#qs-window .qs-group > summary { cursor:pointer; color:#9ca3af; font-size:11px; user-select:none; }
+#qs-window .qs-group > summary:hover { color:#e5e7eb; }
+#qs-window .qs-group > .qs-row { margin-top:4px; }
+#qs-window .qs-group select { background:#0f0f15; color:#e5e7eb; border:1px solid #2b2b3a; border-radius:4px; font-size:11px; padding:1px 4px; }
+#qs-window { transition:opacity .2s ease; }
+#qs-window.qs-noanim { transition:none; }
 #qs-window select { background:#1a1a24; border:1px solid #3f3f5a; border-radius:3px; color:#fff; font-size:11px; padding:1px 2px; outline:none; }
 #qs-window .qs-pager { margin-left:6px; display:flex; align-items:center; gap:6px; font-size:11px; color:#e5e7eb; font-weight:600; }
 #qs-window .qs-pager button { width:22px; height:20px; padding:0; background:#2b2b3a; color:#fff; border:1px solid #3f3f5a; border-radius:3px; font-size:14px; line-height:16px; cursor:pointer; }

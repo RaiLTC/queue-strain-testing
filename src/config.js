@@ -36,6 +36,12 @@ export const SETTINGS = {
   memoryPlays: 12,
   animations: true,
   rescanOnQueueChange: true,
+  // the Window group in the options: fade the window while the mouse is away (how see-through, in %), and what a
+  // click outside it does: 'close' (closes it, the game doesn't get the click), 'through' (closes it and the game
+  // gets the click too) or 'stay' (nothing)
+  fadeAway: false,
+  fadeAmount: 50,
+  clickOutside: 'through',
   // the local estimate: each map's newest this many real plays at the queue's rate (closest to your current level)
   localPlays: 5,
   // calibration simulates each real play again: the newest this many per map
@@ -93,6 +99,14 @@ export const TEXT = {
     localPlaysTip: 'For the XP tab\'s local estimate: how many of your newest plays of each map (at the queue\'s rate and mods, last 24 hours) it averages. Fewer: closer to your current level. More: a steadier average. {n} by default.',
     memoryPlays: 'Memory plays',
     memoryPlaysTip: 'For maps that give Speed Jam or Memory XP: how many of your next plays of each the Speed Jam / Memory tab shows',
+    windowGroup: 'Window',
+    fade: 'Fade when the mouse is away',
+    fadeTip: 'The window turns see-through while the mouse is outside it, and back when it comes in. The slider sets how see-through.',
+    clickOutside: 'Click outside',
+    clickOutsideTip: 'What a click outside the window does. A click on Edit the queue, or while it is open, never closes it.',
+    outsideClose: 'Closes it (the game ignores the click)',
+    outsideThrough: 'Closes it (the game gets the click too)',
+    outsideStay: 'Nothing',
   },
   status: {
     simulating: 'Simulating the queue…',

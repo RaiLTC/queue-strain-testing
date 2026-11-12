@@ -50,6 +50,14 @@ export const mount = (meta, host) => {
             <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(tx(TEXT.options.rescanTip, { sec: SETTINGS.rescanWaitSec.maps, min: SETTINGS.quickUpdateMaxMin }))}"><input id="qs-auto" type="checkbox"${SETTINGS.rescanOnQueueChange ? ' checked' : ''} style="margin:0;"> ${TEXT.options.rescan}</label>
             <span class="qs-dim" style="margin-left:auto;" title="${esc(TEXT.options.memoryPlaysTip)}">${TEXT.options.memoryPlays}</span><input id="qs-memplays-top" type="number" min="1" max="40" step="1" value="${SETTINGS.memoryPlays}" style="width:44px;">
           </div>
+          <details class="qs-group" id="qs-win-group"><summary>${TEXT.options.windowGroup}</summary>
+            <div class="qs-row">
+              <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="${esc(TEXT.options.fadeTip)}"><input id="qs-fade" type="checkbox" style="margin:0;"> ${TEXT.options.fade}</label>
+              <input id="qs-fade-amt" type="range" min="10" max="90" step="10" style="width:90px; accent-color:#9ca3af;" title="${esc(TEXT.options.fadeTip)}"><span id="qs-fade-val" class="qs-dim" style="min-width:30px;"></span>
+              <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;"><span class="qs-dim" title="${esc(TEXT.options.clickOutsideTip)}">${TEXT.options.clickOutside}</span>
+              <select id="qs-outside" style="width:auto;" title="${esc(TEXT.options.clickOutsideTip)}"><option value="close">${TEXT.options.outsideClose}</option><option value="through">${TEXT.options.outsideThrough}</option><option value="stay">${TEXT.options.outsideStay}</option></select></span>
+            </div>
+          </details>
           <div id="qs-status" class="qs-dim" style="margin-top:6px;"></div>
         </div>
       </div>
@@ -85,9 +93,34 @@ export const mount = (meta, host) => {
     if (saved.memPlays) memPlays = Math.min(40, Math.max(1, Math.round(saved.memPlays)));
     memTopInput.value = String(memPlays);
   } catch (_) {}
-  const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab })); } catch (_) {}
+  // the Window group: fade while the mouse is away, and what a click outside does
+  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside');
+  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside;
+  try {
+    const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
+    if (saved.fade !== undefined) fadeBox.checked = !!saved.fade;
+    if (saved.fadeAmount) fadeAmt.value = String(Math.min(90, Math.max(10, Math.round(saved.fadeAmount / 10) * 10)));
+    if (['close', 'through', 'stay'].includes(saved.clickOutside)) outsideSel.value = saved.clickOutside;
+    if (saved.windowGroupOpen) winGroup.open = true;
+  } catch (_) {}
+  let mouseIn = true;
+  /** See-through while the mouse is away (when that's on), solid otherwise. */
+  const applyFade = () => {
+    fadeVal.textContent = `${fadeAmt.value}%`;
+    fadeAmt.disabled = !fadeBox.checked;
+    root.style.opacity = fadeBox.checked && !mouseIn ? String(1 - Number(fadeAmt.value) / 100) : '';
   };
+  root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
+  root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
+  const savePrefs = () => {
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
+  };
+  fadeBox.addEventListener('change', () => { applyFade(); savePrefs(); });
+  fadeAmt.addEventListener('input', applyFade);
+  fadeAmt.addEventListener('change', savePrefs);
+  outsideSel.addEventListener('change', savePrefs);
+  winGroup.addEventListener('toggle', () => { savePrefs(); centerVertically(); });
+  applyFade();
   // look-ahead: whole hours from 1 to 24, digits only (no dot, comma, minus or exponent)
   hoursInput.addEventListener('keydown', (ev) => { if (['.', ',', '-', '+', 'e', 'E'].includes(ev.key)) ev.preventDefault(); });
   hoursInput.addEventListener('change', () => { hoursInput.value = wholeHours(hoursInput.value); savePrefs(); });
@@ -329,6 +362,14 @@ export const mount = (meta, host) => {
     if (!shown() || !(e.target instanceof Element) || editQueueOpen()) return;
     if (root.contains(e.target) || (consoleEl && consoleEl.contains(e.target))) return;
     if (opensEditQueue(e.target)) { setTimeout(fitAroundQueue, 150); return; }
+    if (outsideSel.value === 'stay') return;
+    if (outsideSel.value === 'close') {
+      // the game doesn't get this click: stop it, and the release and click that follow it
+      e.preventDefault(); e.stopPropagation();
+      const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      for (const type of ['pointerup', 'mouseup', 'click']) window.addEventListener(type, swallow, { capture: true, once: true });
+      setTimeout(() => { for (const type of ['pointerup', 'mouseup', 'click']) window.removeEventListener(type, swallow, { capture: true }); }, 600);
+    }
     hide();
   };
   window.addEventListener('pointerdown', outsideListener, true);
