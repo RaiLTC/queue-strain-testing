@@ -43,35 +43,47 @@ export const SKILL_SHORT = { accuracy: 'Acc', speed: 'Spd', stamina: 'Sta', jack
 export const STAGE_COLOR = { cold: '#4f9cf5', warming: '#4f9cf5', peak: '#e8c147', pushing: '#f0883e', fatigued: '#c084fc' };
 export const arrows = (trend) => (trend > 0 ? `<span style="color:#f0883e">${'›'.repeat(trend)}</span>` : trend < 0 ? `<span style="color:#4f9cf5">${'‹'.repeat(-trend)}</span>` : '<span class="qs-dim">·</span>');
 
-/** Where the bar is at each hour of the forecast, and which of those get a label: every other one and the
- *  last, none closer than 4% to the one before it. */
-export const hourMarks = (samples, hours) => {
-  const step = hours > 12 ? 2 : 1;
-  const marks = [];
-  for (let h = step; h <= hours + 1e-9; h += step) {
-    const s = samples.find(x => x.t >= h * 3600) || samples[samples.length - 1];
-    marks.push({ h, bar: s.bar, label: false });
+/** How long the forecast stays at each 1% of the bar: seconds per bin, each step between two samples spread
+ *  evenly over the bins it passes through. */
+const timeAtBar = (samples) => {
+  const bins = new Array(100).fill(0);
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1], b = samples[i], dt = b.t - a.t;
+    if (!(dt > 0)) continue;
+    const lo = Math.min(99, Math.floor(Math.min(a.bar, b.bar) * 100)), hi = Math.min(99, Math.floor(Math.max(a.bar, b.bar) * 100));
+    for (let k = lo; k <= hi; k++) bins[k] += dt / (hi - lo + 1);
   }
-  const want = marks.filter((m, i) => i % 2 === 0 || i === marks.length - 1);
-  const placed = [];
-  for (const m of [...want].reverse()) {
-    if (placed.every(p => Math.abs(p.bar - m.bar) > 0.04)) { m.label = true; placed.push(m); }
-  }
-  return marks;
+  return bins;
 };
+/** The ghost trail's colour at a point of the bar: white below the sweet spot, yellow in it, orange past it, red past the XP cut. */
+const trailColor = (b) => (b < BAR_ZONES[0] ? '#e5e7eb' : b < BAR_ZONES[1] ? '#facc15' : b < XP_CUT ? '#fb923c' : '#f87171');
 
-/** The warm-up bar, as the game draws it: zones, where it is, and where the forecast takes it (a faint band
- *  over the range it moves through and a ring where it is at each hour). */
+/** The warm-up bar, as the game draws it: zones and where it is now. Over it, where the forecast takes it:
+ *  a ghost trail, thicker and brighter where more time is spent, a faint line to where it ends, and a ghost needle there. */
 export const barHtml = (bar, ahead) => {
   let future = '';
   if (ahead && ahead.samples.length > 1) {
-    const later = ahead.samples.slice(1).map(s => s.bar);
-    const lo = Math.min(...later), hi = Math.max(...later);
-    future += `<div class="qs-band" style="left:${(lo * 100).toFixed(2)}%; width:${Math.max(0.6, (hi - lo) * 100).toFixed(2)}%" title="The range the forecast moves through"></div>`;
-    for (const m of hourMarks(ahead.samples, ahead.hours)) {
-      future += `<div class="qs-hour" style="left:${(m.bar * 100).toFixed(2)}%" title="After ${dur(m.h * 3600)}: ${(m.bar * 100).toFixed(0)}%"></div>`;
-      if (m.label) future += `<div class="qs-hour-label" style="left:${(m.bar * 100).toFixed(2)}%">${m.h}H</div>`;
+    const bins = timeAtBar(ahead.samples);
+    // a little smoothing, so the trail reads as one shape rather than a comb
+    const smooth = bins.map((v, k) => (bins[k - 1] || 0) * 0.25 + v * 0.5 + (bins[k + 1] || 0) * 0.25);
+    const top = Math.max(...smooth);
+    const H = 26, mid = 13;
+    const half = (v) => (v > 0 ? 3 + (v / top) * 8 : 0);
+    const used = smooth.map((v, k) => (v > 0 ? k : -1)).filter(k => k >= 0);
+    let shapes = '';
+    if (used.length && top > 0) {
+      // one slice per 1%, its height and brightness set by the time spent there
+      shapes = smooth.map((v, k) => (v > 0 ? `<rect x="${k}" y="${(mid - half(v)).toFixed(2)}" width="1.02" height="${(2 * half(v)).toFixed(2)}" fill="${trailColor((k + 0.5) / 100)}" opacity="${(0.45 + 0.5 * v / top).toFixed(2)}"/>` : '')).join('');
+      // hover areas of 5% each: how long the forecast stays there
+      for (let k = 0; k < 100; k += 5) {
+        const sec = bins.slice(k, k + 5).reduce((t, v) => t + v, 0);
+        if (sec >= 60) shapes += `<rect class="hit" x="${k}" y="0" width="5" height="${H}" fill="transparent"><title>About ${durWords(sec)} between ${k}% and ${k + 5}%</title></rect>`;
+      }
     }
+    const end = ahead.samples[ahead.samples.length - 1].bar;
+    future += `<div class="qs-path" style="left:${(Math.min(bar, end) * 100).toFixed(2)}%; width:${(Math.abs(end - bar) * 100).toFixed(2)}%"></div>`;
+    future += `<svg class="qs-trail" viewBox="0 0 100 ${H}" preserveAspectRatio="none">${shapes}</svg>`;
+    future += `<div class="qs-ghost" style="left:${(end * 100).toFixed(2)}%" title="After ${ahead.hours} hour${ahead.hours === 1 ? '' : 's'}: ${(end * 100).toFixed(0)}%"></div>`;
   }
   return `
   <div class="qs-bar">

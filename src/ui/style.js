@@ -178,9 +178,11 @@ export const CSS = `
 #qs-window .qs-tick { position:absolute; top:5px; width:2px; height:16px; background:#e5e7eb; border-radius:1px; }
 #qs-window .qs-cut { position:absolute; top:3px; width:3px; height:20px; margin-left:-1.5px; background:#ef4444; border-radius:1px; box-shadow:0 0 4px rgba(239,68,68,.7); }
 #qs-window .qs-cut-label { position:absolute; top:-9px; transform:translateX(-50%); font-size:9px; font-weight:700; color:#f87171; white-space:nowrap; }
-#qs-window .qs-band { position:absolute; top:7px; height:12px; border-radius:6px; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); }
-#qs-window .qs-hour { position:absolute; top:9px; width:8px; height:8px; margin-left:-4px; border-radius:50%; border:1.5px solid rgba(255,255,255,.55); background:rgba(20,20,28,.6); }
-#qs-window .qs-hour-label { position:absolute; top:28px; transform:translateX(-50%); font-size:9px; color:rgba(229,231,235,.6); white-space:nowrap; }
+/* where the forecast goes: the ghost trail (time spent at each point), a faint line to the end, and a ghost needle there */
+#qs-window .qs-trail { position:absolute; left:0; top:0; width:100%; height:26px; overflow:visible; filter:drop-shadow(0 0 1.5px rgba(0,0,0,.95)) blur(.4px); pointer-events:none; }
+#qs-window .qs-trail .hit { pointer-events:all; }
+#qs-window .qs-path { position:absolute; top:12.5px; height:1px; background:rgba(255,255,255,.3); }
+#qs-window .qs-ghost { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:rgba(255,255,255,.35); border:1px dashed rgba(255,255,255,.7); box-sizing:border-box; border-radius:2px; }
 #qs-window .qs-needle { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:#fff; border-radius:2px; box-shadow:0 0 4px #000; z-index:1; }
 #qs-window .qs-needle::after { content:''; position:absolute; left:-4px; top:22px; border:6px solid transparent; border-bottom:8px solid #fff; border-top:none; }
 #qs-window .qs-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }

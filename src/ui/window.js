@@ -654,7 +654,7 @@ export const mount = (meta, host) => {
       const matched = r.calib ? Object.entries(r.calib.factors) : [];
       const ignored = r.calib ? Object.keys(r.calib.ignored || {}) : [];
       lines.push(['Medals', medals.ok
-        ? (medals.guest ? 'none: a guest character holds no medals' : `<b>×${medals.multiplier.toFixed(3)}</b> on all XP, from your ${medals.held} medal${medals.held === 1 ? '' : 's'} on the server${medals.unknown ? ` <span class="qs-dim">(${medals.unknown} newer than this add-on, not counted)</span>` : ''}`)
+        ? (medals.guest ? 'none: a guest character holds no medals' : `<b>×${medals.multiplier.toFixed(3)}</b> · ${medals.held} medal${medals.held === 1 ? '' : 's'}${medals.unknown ? ` <span class="qs-dim" title="Newer than this add-on, so not counted">(${medals.unknown} not counted)</span>` : ''}`)
         : matched.length
           ? `<span style="color:#fca5a5">couldn't reach the server</span>, so learned from your last ${r.calib.plays} play${r.calib.plays === 1 ? '' : 's'} of these maps: ${matched.map(([sk, f]) => `${SKILL_NAMES[sk]} ×${f.toFixed(2)}`).join(', ')}${ignored.length ? `. <span style="color:#fca5a5">Not applied, as they look wrong: ${ignored.map(sk => `${SKILL_NAMES[sk]} ×${r.calib.ignored[sk].toFixed(2)}`).join(', ')}</span> (see Debug)` : ''}`
           : '<span style="color:#fca5a5">couldn\'t reach the server and no recent plays of these maps, so these are the simulator\'s numbers before your medals: likely too low</span>']);
@@ -662,9 +662,10 @@ export const mount = (meta, host) => {
       if (blocked.length) {
         const avg = blocked.reduce((sum, p) => sum + num(p.block ?? 1), 0) / blocked.length;
         const low = Math.min(...blocked.map(p => num(p.block ?? 1)));
-        const skillsHit = SKILLS.filter(sk => MINDBLOCK.has(sk) && blocked.some(p => num(p.xp[sk]) > 0)).map(sk => SKILL_NAMES[sk]).join(', ');
+        const skillsHit = SKILLS.filter(sk => MINDBLOCK.has(sk) && blocked.some(p => num(p.xp[sk]) > 0)).map(sk => SKILL_NAMES[sk]);
+        const skillsList = skillsHit.length > 1 ? `${skillsHit.slice(0, -1).join(', ')} and ${skillsHit[skillsHit.length - 1]}` : skillsHit[0];
         lines.push([`<span style="cursor:help; border-bottom:1px dotted currentColor;" title="The server cuts XP on maps you played a lot lately: it counts how many of your last 50 plays (within a day) were the same map. Speed, Stamina, Jack Speed, Coordination and Memory are never cut.">Mindblock</span>`,
-          avg > 0.995 ? 'none: these maps are few of your recent plays' : `<b>×${avg.toFixed(2)}</b> on average${low < avg - 0.01 ? `, down to ×${low.toFixed(2)}` : ''}, on ${skillsHit}`]);
+          avg > 0.995 ? 'none: these maps are few of your recent plays' : `<b>×${avg.toFixed(2)}</b> on average${low < avg - 0.01 ? `, down to ×${low.toFixed(2)}` : ''}, on ${skillsList}`]);
       }
       if (r.loopSec) {
         const loopPlays = r.plays.slice(r.loopStart, r.loopStart + r.loopPlays);
@@ -738,7 +739,7 @@ export const mount = (meta, host) => {
           <thead><tr><th>Skill XP</th>
             <th class="n" title="The simulator's own numbers, before your genetics, medals and other bonuses.">Simulator</th>
             <th class="n" title="The simulator's XP with mindblock taken off, then your medals and genetics added, the way the server counts it. This is what the rest of the add-on uses.">Simulator + Bonuses</th>
-            <th class="n" title="What each map actually gave you per play, on average over your newest ${localCount()} plays of it at the queue's rate and mods in the last 24 hours (the Local plays option). A map you haven't played in that time is left out. Those plays had their own mindblock and strain, so expect some difference.${partial ? ` Covers the ${mapsEnough} played map${mapsEnough === 1 ? '' : 's'} only: hover a number to compare it with the same maps' Simulator + Bonuses.` : ''}">Local Estimation</th></tr></thead>
+            <th class="n" title="Based on your real plays, not simulated. With few or no plays, it can be inaccurate.">Local Estimation</th></tr></thead>
           <tbody>${cmpRows.map(x => `<tr><td>${SKILL_NAMES[x.sk]}</td><td class="n qs-dim">${fmt(x.sim)}</td><td class="n">${fmt(x.matched)}</td>${realCell(x)}</tr>`).join('')}
             <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td class="n qs-dim">${fmt(total.sim)}</td><td class="n"><b>${fmt(total.matched)}</b></td>${realCell(total, true)}</tr></tbody>
         </table></div>
