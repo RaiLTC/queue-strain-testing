@@ -35,7 +35,9 @@ export const CHANGELOG = {
 };
 
 // small fixes since the last big update: the wrench button, glowing orange until read. Empty text hides it;
-// a new id (or text) lights it up again
+// a new id (or text) lights it up again.
+// Which one to update: a #.#.# release (1.3.5, 1.3.6) writes CHANGELOG and empties HOTFIXES; an x.x.x# release
+// (1.3.51, 1.3.58) only adds to HOTFIXES and leaves CHANGELOG exactly as it is
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
