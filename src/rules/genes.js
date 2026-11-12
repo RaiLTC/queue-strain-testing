@@ -59,8 +59,8 @@ export const geneticsXpOf = (json) => {
     const strength = at < 0 ? 0 : picked.reduce((sum, p) => sum + (p === sk ? 1 : p === RING[(at + 1) % n] || p === RING[(at + n - 1) % n] ? 0.5 : 0), 0);
     const ids = (GENE_TREES[sk] || '').split(' ');
     const tiers = ids.reduce((sum, id) => sum + num(genes[id]), 0);
-    const xpGene = num(genes[ids[0]]);
-    const parts = { strength, fromStrength: GENETIC_XP_BONUS * strength, xpGene, fromXpGene: XP_GENE_PER * xpGene * strength, tiers, fromTiers: GENE_XP_BONUS * tiers,
+    const xpGene = num(genes[ids[0]]), odGene = num(genes[ids[1]]);
+    const parts = { strength, fromStrength: GENETIC_XP_BONUS * strength, xpGene, odGene, fromXpGene: XP_GENE_PER * xpGene * strength, tiers, fromTiers: GENE_XP_BONUS * tiers,
       lnMaps: sk === 'release' ? LN_XP_PER * num(genes.lnSpecialist) * strength : 0 };
     out[sk] = { ...parts, total: 1 + parts.fromStrength + parts.fromXpGene + parts.fromTiers };
   }

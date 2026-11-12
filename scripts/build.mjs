@@ -19,6 +19,7 @@ const FILES = [
   'src/config.js',
   'src/rules/fatigue.js',
   'src/rules/genes.js',
+  'src/rules/routes.js',
   'src/game.js',
   'src/forecast.js',
   'src/ui/style.js',

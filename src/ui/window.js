@@ -5,6 +5,7 @@ import { cached, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurv
 import { MINDBLOCK, SKILLS, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
+import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
 import { LOG_READ_KEY, MATCH_HELP, NOTICE_READ_KEY, SKILL_NAMES, SKILL_SHORT, STAGE_COLOR, TABS, arrows, barHtml, changelogHtml, clock, hotfixHtml, hotfixId, HOTFIX_READ_KEY, dur, durH, durWords, esc, fmt, graphHtml, logId, matchColor, matchText, minText, noticeHtml, noticeId, shortTime, unitsHtml, wireSlider } from './parts.js';
 import { CSS } from './style.js';
 
@@ -85,6 +86,9 @@ export const mount = (meta, host) => {
   /** The tab shown (Overview on the first scan after the game starts, then the one picked), and how many
    *  plays the Debug tab lists. */
   let activeTab = 'overview';
+  /** The Levels tab's display: 'regular' or 'overall' (each skill's lifetime level, as on the profile), each also
+   *  with '-route' (upgrades bought along the route add-on's routes); and whether routes are used at all. */
+  let levelsView = 'regular', useRoutes = true;
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table';
@@ -92,6 +96,8 @@ export const mount = (meta, host) => {
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
+    if (['regular', 'overall', 'regular-route', 'overall-route'].includes(saved.levelsView)) levelsView = saved.levelsView;
+    if (saved.useRoutes !== undefined) useRoutes = !!saved.useRoutes;
     autoBox.checked = saved.autoRescan ?? SETTINGS.rescanOnQueueChange;
     animBox.checked = saved.animations ?? SETTINGS.animations;
     if (saved.localPlays) localInput.value = String(Math.min(50, Math.max(1, Math.round(saved.localPlays))));
@@ -145,7 +151,7 @@ export const mount = (meta, host) => {
   root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
   root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
   const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, optionsPassThrough: optsBox.checked, chatHole: chatBox.checked, escEditing: escSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, optionsPassThrough: optsBox.checked, chatHole: chatBox.checked, escEditing: escSel.value, levelsView, useRoutes, windowGroupOpen: winGroup.open })); } catch (_) {}
   };
   modsBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   escSel.addEventListener('change', savePrefs);
@@ -1012,9 +1018,17 @@ export const mount = (meta, host) => {
       const loopSec = r.loopSec || 0;
       const marks = [6, 12, 24].filter(h => h < ctx.hours - 1e-6);
       const MAP_COLORS = SETTINGS.colors.maps;
+      // the display: regular or overall (lifetime levels), and with the route add-on's routes when it is installed,
+      // routes are on and a '+ route' display is picked
+      const routesAll = readRoutes();
+      const routesOn = !!routesAll && useRoutes;
+      const lifetimeView = levelsView.startsWith('overall');
+      const routeView = routesOn && levelsView.endsWith('-route');
+      const viewNow = `${lifetimeView ? 'overall' : 'regular'}${routeView ? '-route' : ''}`;
       /** A row of the table: `sk` (a skill, or 'overall'), from level L0 with x0 XP into it, to the goal level
-       *  `need` (prestige, or rebirth for overall), earning `gainOf(play)` a play. */
-      const progressRow = (sk, L0, x0, need, gainOf) => {
+       *  `need` (prestige, or rebirth for overall), earning `gainOf(play)` a play. `lifetime`: the skill's overall
+       *  level, whose goal is just its next level. */
+      const progressRow = (sk, L0, x0, need, gainOf, lifetime = false) => {
         const start = levelOf(L0, x0);
         const overall = sk === 'overall';
         const cost = xpForLevel(L0);
@@ -1025,6 +1039,8 @@ export const mount = (meta, host) => {
         // from 100, a step a level up to prestige (2 when it's 6-10 away), starting at 105 once past it
         const barMarks = (() => {
           const out = [];
+          // an overall level past 100: one piece, this level to the next
+          if (lifetime && start >= 100) return [L0, L0 + 1];
           // already able to prestige: one full piece up to its prestige level
           if (start >= need) return [need - 1, need];
           if (start < 100) {
@@ -1066,9 +1082,33 @@ export const mount = (meta, host) => {
         const later = (xpLeft) => (perH > 0 ? spanSec + Math.max(0, xpLeft - cum) / perH * 3600 : Infinity);
         const nextSec = nextAt ?? later(cost - x0);
         const readySec = readyAt ?? later(toPrestige);
-        return { sk, overall, L0, x0, start, need, cost, toPrestige, cum, readyAt, nextSec, readySec, end, perH, atMark, byMap, barMarks, markAt };
+        return { sk, overall, lifetime, L0, x0, start, need, cost, toPrestige, cum, readyAt, nextSec, readySec, end, perH, atMark, byMap, barMarks, markAt };
       };
-      const skillRows = SKILLS.map(sk => progressRow(sk, Math.floor(num(row0[sk])), num(row0[`${sk}XP`]), 100 + num(row0[`${sk}Prestige`]), p => xpOf(p, sk)));
+      const skillRows = SKILLS.map((sk) => {
+        const L0 = Math.floor(num(row0[sk])), x0 = num(row0[`${sk}XP`]), prestige = num(row0[`${sk}Prestige`]);
+        // following the route: the upgrades bought on the way, and each play's XP scaled by what they add
+        const gene = genetics[sk];
+        const sim = routeView ? simulateRoute({ plays: r.plays, gainOf: p => xpOf(p, sk), L0, x0, upgrades: num(row0[`${sk}Upgrades`]), overdrive: num(row0[`${sk}Overdrive`]),
+          prestige, route: routesAll[prestige] || [], odPct: gene ? 5 * num(gene.odGene) * num(gene.strength) : 0, need: 100 + prestige, basePerH: perHour(p => xpOf(p, sk)), spanSec }) : null;
+        const gainOf = sim ? (p) => xpOf(p, sk) * (sim.ratioOf.get(p) ?? 1) : (p) => xpOf(p, sk);
+        let x;
+        if (lifetimeView) {
+          // the overall level: all the XP the skill ever earned (at least what its level now took)
+          const lt = gainLevels(0, 0, Math.max(num(row0[`${sk}LifetimeXp`]), routeCumXp(levelOf(L0, x0))));
+          x = progressRow(sk, lt.level, lt.xp, lt.level + 1, gainOf, true);
+        } else {
+          x = progressRow(sk, L0, x0, 100 + prestige, gainOf);
+          if (sim) {
+            // the level drops at each upgrade, so where it is and when it gets somewhere come from the route's run
+            x.end = sim.endLevel; x.readyAt = sim.readyAt; x.readySec = sim.readySec; x.toPrestige = 0;
+            x.markAt = {};
+            for (const m of x.barMarks) { const hit = m > x.start ? sim.samples.find(q => q.t > 0 && q.level >= m) : null; if (hit) x.markAt[m] = hit.t; }
+            x.atMark = marks.map((h) => { let lv = sim.samples[0].level; for (const q of sim.samples) { if (q.t <= h * 3600 + 1e-6) lv = q.level; else break; } return lv; });
+          }
+        }
+        x.sim = sim;
+        return x;
+      });
       // the overall level, as rebirth counts it: every skill's lifetime XP together. Rebirth at 110, 10 more a generation.
       const lifetime = SKILLS.reduce((t, sk) => t + num(row0[`${sk}LifetimeXp`]), 0);
       const overallNow = gainLevels(0, 0, lifetime);
@@ -1083,9 +1123,13 @@ export const mount = (meta, host) => {
       /** The bar: one piece between each pair of marks, filled to your level and, fainter, to where this queue takes
        *  you. Under each piece its end mark, with the time if it's reached within the look-ahead. A skill that
        *  reaches prestige within it shifts its last piece's progress to pink. */
+      /** A purchase on the route: "Upgrade #4 at Lv 91 · in 2h 10m". */
+      const upgradeWhen = (ev) => (ev.at <= 0 ? TEXT.levels.readyNow : ev.at <= spanSec + 1 ? `in ${dur(ev.at)}` : `~${ev.at < 86400 ? dur(ev.at) : `${Math.floor(Math.round(ev.at / 3600) / 24)}d ${Math.round(ev.at / 3600) % 24}h`}`);
+      const upgradeText = (ev) => `${tx(TEXT.levels.upgradeAt, { k: ev.k, lv: ev.level.toFixed(ev.level % 1 ? 2 : 0) })} · ${upgradeWhen(ev)}`;
       const levelsBar = (x) => {
         const m = x.barMarks, n = m.length - 1;
-        const soon = x.readyAt !== undefined && x.readyAt > 0;
+        const soon = !x.lifetime && x.readyAt !== undefined && x.readyAt > 0;
+        const ups = x.sim && !x.lifetime ? x.sim.events : [];
         const cells = [];
         for (let k = 0; k < n; k++) {
           const a2 = m[k], b2 = m[k + 1];
@@ -1093,11 +1137,13 @@ export const mount = (meta, host) => {
           const endF = Math.max(0, Math.min(1, (Math.min(x.end, b2) - a2) / (b2 - a2)));
           const last = k === n - 1;
           const at = x.markAt[b2];
-          const goal = last && x.start >= 100 && b2 === x.need;
+          const goal = !x.lifetime && last && x.start >= 100 && b2 === x.need;
+          // the route's upgrades bought inside this piece
+          const upMarks = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9).map(ev => `<b class="qs-lv-up" style="left:${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%" title="${esc(upgradeText(ev))}"></b>`).join('');
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
           const completes = endF >= 1 && nowF < 1;
-          cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i></div>
+          cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>
             <span class="qs-lv-tk${last ? '' : ' mid'}${goal ? ' goal' : at !== undefined ? ' time' : ''}">${label}</span></div>`);
         }
         return `<div class="qs-lv-bar"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}</div>`;
@@ -1113,7 +1159,9 @@ export const mount = (meta, host) => {
         if (x.readyAt === 0 || !isFinite(x.readySec)) return prestigeText(x);
         return x.readyAt !== undefined ? `<span style="font-weight:600;">${wordsDur(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${wordsDur(x.readySec)}</span>`;
       };
-      const shareOf = (x) => (totalPerH > 0 ? Math.round(x.perH / totalPerH * 100) : 0);
+      // a skill's share of all the XP per hour (with a route: of the XP as the routes' upgrades make it)
+      const allPerH = routeView ? skillRows.reduce((t, x) => t + x.perH, 0) : totalPerH;
+      const shareOf = (x) => (allPerH > 0 ? Math.round(x.perH / allPerH * 100) : 0);
       const detailRow = (x) => {
         const ranked = [...x.byMap.entries()].filter(([, v]) => v > 0).sort((a2, b2) => b2[1] - a2[1]);
         const sum = ranked.reduce((t, [, v]) => t + v, 0);
@@ -1132,13 +1180,15 @@ export const mount = (meta, host) => {
             <span class="qs-dim">${TEXT.levels.now}</span><span>${x.start.toFixed(2)}</span>
             ${marks.map((h, k) => `<span class="qs-dim">${tx(TEXT.levels.after, { time: durH(h * 3600) })}</span><span>${x.atMark[k].toFixed(2)}</span>`).join('')}
             <span class="qs-dim">${tx(TEXT.levels.after, { time: durH(spanSec) })}</span><span>${x.end.toFixed(2)}</span>
-            <span class="qs-dim">${x.overall ? TEXT.levels.rebirth : TEXT.levels.prestige}</span><span title="${x.toPrestige ? tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) }) : ''}">${prestigeText(x)}</span></div></div>
+            <span class="qs-dim">${x.overall ? TEXT.levels.rebirth : x.lifetime ? TEXT.levels.nextLevel : TEXT.levels.prestige}</span><span title="${x.toPrestige ? tx(TEXT.levels.xpToGo, { xp: fmt(x.toPrestige) }) : ''}">${prestigeText(x)}</span>
+            ${x.sim ? `<span class="qs-dim">${TEXT.levels.nextUpgrade}</span><span>${x.sim.events.length ? esc(upgradeText(x.sim.events[0])) : x.sim.tracked ? TEXT.levels.routeDone : tx(TEXT.levels.noRoute, { p: x.sim.prestige })}</span>
+            <span class="qs-dim">${TEXT.levels.upgradesLeft}</span><span>${x.sim.events.length}</span>` : ''}</div></div>
           <div><div class="qs-lv-dh">${TEXT.levels.xpTitle}</div><div class="qs-lv-kv">
             <span class="qs-dim">${TEXT.levels.perHour}</span><span>${x.perH > 0 ? `${fmt(x.perH)}${x.overall ? '' : ` <span class="qs-faint">${tx(TEXT.levels.queueShare, { pct: shareOf(x) })}</span>`}` : '–'}</span>
             <span class="qs-dim">${TEXT.levels.perPlay}</span><span>${plays ? fmt(x.cum / plays) : '–'}</span>
             ${loopSec ? `<span class="qs-dim">${TEXT.levels.perLoop}</span><span>${fmt(x.perH * loopSec / 3600)}</span>` : ''}
             <span class="qs-dim">${tx(TEXT.levels.within, { time: durH(spanSec) })}</span><span>${fmt(x.cum)}</span>
-            <span class="qs-dim">${x.overall ? TEXT.levels.toRebirth : TEXT.levels.toPrestige}</span><span>${x.toPrestige ? fmt(x.toPrestige) : '–'}</span></div></div>
+            <span class="qs-dim">${x.overall ? TEXT.levels.toRebirth : x.lifetime ? TEXT.levels.nextLevel : TEXT.levels.toPrestige}</span><span>${x.toPrestige ? fmt(x.toPrestige) : '–'}</span></div></div>
         </div></td></tr>`;
       };
       // the overall level sits on its own above the skills: one line, then its bar. It doesn't open.
@@ -1159,12 +1209,17 @@ export const mount = (meta, host) => {
       <div class="qs-card">
         <div class="qs-h">${TEXT.levels.title}</div>
         ${overallHtml}
-        <div class="qs-dim" style="margin-bottom:6px;">${TEXT.levels.intro}</div>
+        <div class="qs-row" style="margin-bottom:4px;">
+          <span class="qs-dim">${TEXT.levels.display}</span>
+          <select id="qs-lv-view" style="width:auto;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute], ['overall-route', TEXT.levels.viewOverallRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
+          ${routesAll ? `<label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.levels.useRoutesTip)}"><input id="qs-lv-routes" type="checkbox"${useRoutes ? ' checked' : ''} style="margin:0;"> ${TEXT.levels.useRoutes}</label>` : ''}
+        </div>
+        <div class="qs-dim" style="margin-bottom:6px;">${lifetimeView ? TEXT.levels.introOverall : TEXT.levels.intro}${routeView ? ` ${TEXT.levels.introRoute}` : ''}</div>
         <table class="qs-lv">
-          <thead><tr><th>${TEXT.levels.skill}</th><th class="n">${TEXT.levels.xph}</th><th class="n">${TEXT.levels.prestige}</th><th style="padding-left:16px;">${TEXT.levels.bar}</th></tr></thead>
+          <thead><tr><th>${TEXT.levels.skill}</th><th class="n">${TEXT.levels.xph}</th><th class="n">${lifetimeView ? TEXT.levels.nextLevel : TEXT.levels.prestige}</th><th style="padding-left:16px;">${lifetimeView ? TEXT.levels.barOverall : TEXT.levels.bar}</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-        <div class="qs-legend" style="margin-top:6px;"><span><i class="qs-sw" style="background:var(--qs-now);"></i>${TEXT.levels.legendNow}</span><span><i class="qs-sw" style="background:var(--qs-now); opacity:.45;"></i>${TEXT.levels.legendProgress}</span><span class="qs-lg-complete"><i class="qs-sw qs-sw-complete"></i>${TEXT.levels.legendComplete}</span><span><i class="qs-sw qs-sw-shift"></i>${TEXT.levels.legendPrestige}</span></div>
+        <div class="qs-legend" style="margin-top:6px;"><span><i class="qs-sw" style="background:var(--qs-now);"></i>${TEXT.levels.legendNow}</span><span><i class="qs-sw" style="background:var(--qs-now); opacity:.45;"></i>${TEXT.levels.legendProgress}</span><span class="qs-lg-complete"><i class="qs-sw qs-sw-complete"></i>${TEXT.levels.legendComplete}</span>${lifetimeView ? '' : `<span><i class="qs-sw qs-sw-shift"></i>${TEXT.levels.legendPrestige}</span>`}${routeView && !lifetimeView ? `<span><i class="qs-sw" style="background:#fbbf24; width:3px;"></i>${TEXT.levels.legendUpgrade}</span>` : ''}</div>
       </div>`;
     }
 
@@ -1399,6 +1454,10 @@ export const mount = (meta, host) => {
     for (const tr of outEl.querySelectorAll('.qs-lv-row')) {
       tr.onclick = () => { const k = tr.dataset.skill; if (levelsOpen.has(k)) levelsOpen.delete(k); else levelsOpen.add(k); renderResult(...lastResult); centerVertically(); };
     }
+    const viewSel = outEl.querySelector('#qs-lv-view');
+    if (viewSel) viewSel.onchange = () => { if (!viewSel.value) return; levelsView = viewSel.value; savePrefs(); renderResult(...lastResult); };
+    const routesBox = outEl.querySelector('#qs-lv-routes');
+    if (routesBox) routesBox.onchange = () => { useRoutes = routesBox.checked; savePrefs(); renderResult(...lastResult); };
     const localList = outEl.querySelector('.qs-local-list');
     if (localList) localList.addEventListener('toggle', () => { localOpen = localList.open; centerVertically(); });
     for (const btn of outEl.querySelectorAll('.qs-tabs button')) {
