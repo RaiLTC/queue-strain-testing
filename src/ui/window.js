@@ -667,7 +667,6 @@ export const mount = (meta, host) => {
           ${Object.entries(views).map(([id, label]) => `<button type="button" class="qs-con-view${consoleView === id ? ' on' : ''}" data-view="${id}">${label}</button>`).join('')}
           <span style="flex:1;"></span>
           <button type="button" class="qs-con-live${consoleLive ? ' on' : ''}" title="${consoleLive ? `Checking for new plays every ${LIVE_CHECK_MS / 1000}s. Click to pause.` : 'Paused. Click to follow new plays again.'}">${consoleLive ? '<i></i>Live' : 'Paused'}</button>
-          <button type="button" class="qs-plain qs-con-copy">Copy</button>
           <button type="button" class="qs-plain qs-con-dev" title="Also print these tables to the developer console (Ctrl+Shift+I)">Send to dev console</button>
           <button type="button" class="qs-con-x" title="Close the console (Esc)">✕</button>
         </div>
@@ -690,12 +689,6 @@ export const mount = (meta, host) => {
       const newBody = consoleEl.querySelector('.qs-con-body');
       if (keep) { newBody.scrollTop = keep.top; newBody.scrollLeft = keep.left; }
       for (const b of consoleEl.querySelectorAll('.qs-con-view')) b.onclick = () => { consoleView = b.dataset.view; draw(); };
-      const copyB = consoleEl.querySelector('.qs-con-copy');
-      copyB.onclick = async () => {
-        const text = consoleView === 'diag' && data.diag ? data.diag.text : consoleView === 'played' ? tsv(data.played) : `${tsv(data.calibRows)}\n\n${tsv(data.calibSummary)}`;
-        copyB.textContent = (await copyText(text)) ? 'Copied' : 'Copy failed';
-        setTimeout(() => { if (copyB.isConnected) copyB.textContent = 'Copy'; }, 1500);
-      };
       const devB = consoleEl.querySelector('.qs-con-dev');
       devB.onclick = () => {
         console.groupCollapsed(`[Queue Strain] your last ${data.played.length} plays, as the game stored them`);
@@ -835,10 +828,14 @@ export const mount = (meta, host) => {
         <td><span class="qs-mini"><b style="left:${XP_CUT * 100}%"></b><i style="left:${(p.bar * 100).toFixed(1)}%"></i></span> <span style="color:${STAGE_COLOR[stageOf(p.bar)]}">${(p.bar * 100).toFixed(0)}%</span>${p.passed ? '' : ' <span style="color:#fca5a5">fail</span>'}</td>
       </tr>`;
     }).join('');
+    // the three skills this queue gives the most XP to (issue #4)
+    const topSkills = SKILLS.map(sk => [sk, r.plays.reduce((t, p) => t + xpOf(p, sk), 0)]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([sk]) => SKILL_NAMES[sk]);
+    const topSkillsLine = topSkills.length ? `<div style="margin-bottom:6px;"><span class="qs-dim">Trains most:</span> <b>${topSkills.length > 1 ? `${topSkills.slice(0, -1).join(', ')} and ${topSkills[topSkills.length - 1]}` : topSkills[0]}</b></div>` : '';
     const overview = `
       <div class="qs-cols">
         <div class="qs-card">
           <div class="qs-h">Where This Queue Takes You</div>
+          ${topSkillsLine}
           ${facts(outlook)}
           ${graphHtml(r.samples, endSec)}
         </div>
@@ -1193,7 +1190,7 @@ export const mount = (meta, host) => {
       const prestigeText = (x) => {
         if (x.readyAt === 0) return `<span class="qs-ready">${TEXT.levels.readyNow}</span>`;
         if (!isFinite(x.readySec)) return '<span class="qs-faint">–</span>';
-        return x.readyAt !== undefined ? `<span style="font-weight:600;">in ${durH(x.readySec, true)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${longDur(x.readySec)}</span>`;
+        return x.readyAt !== undefined ? `<span style="font-weight:600; color:var(--qs-prestige);">${durH(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${longDur(x.readySec)}</span>`;
       };
       /** The overall rebirth time in words, numbers coloured: "in 3 days and 4 hours". */
       const wordsDur = (sec) => `in ${durWords(sec, true, true)}`;
@@ -1295,7 +1292,7 @@ export const mount = (meta, host) => {
     const calibPanel = `
       <div class="qs-card"><div class="qs-h">Calibration</div>
         <div class="qs-dim" style="margin-bottom:4px;">Your last plays${r.calib ? ` (${r.calib.plays})` : ''} re-simulated vs real XP. ${medals.ok ? `Factor near ×${medals.multiplier.toFixed(3)} (medals) = accurate.` : 'No server: factors stand in for medals.'}</div>
-        ${calibSkills.length ? `<div style="overflow-x:auto;"><table><thead><tr><th>Skill</th><th class="n">Plays</th><th class="n">Real</th><th class="n" title="The add-on's estimate for these same plays: the simulator's XP with mindblock, your genetics and your medals">With your bonuses</th><th class="n" title="the lowest and highest single-play factor">Range</th><th class="n" title="Real ÷ the simulator with mindblock and genetics, before medals: close to your medals is right">Factor</th><th class="n" title="${MATCH_HELP}" style="cursor:help;">Match ⓘ</th></tr></thead><tbody>
+        ${calibSkills.length ? `<div style="overflow-x:auto;"><table><thead><tr><th>Skill</th><th class="n">Plays</th><th class="n">Real</th><th class="n" title="The add-on's estimate for these same plays: the simulator's XP with mindblock, your genetics and your medals">With bonuses</th><th class="n" title="the lowest and highest single-play factor">Range</th><th class="n" title="Real ÷ the simulator with mindblock and genetics, before medals: close to your medals is right">Factor</th><th class="n" title="${MATCH_HELP}" style="cursor:help;">Match ⓘ</th></tr></thead><tbody>
           ${calibSkills.map(sk => `<tr><td>${SKILL_NAMES[sk]}</td><td class="n">${r.calib.n[sk]}</td><td class="n">${fmt(r.calib.real[sk])}</td><td class="n">${estOf(sk) > 0 ? fmt(estOf(sk)) : '<span class="qs-dim">–</span>'}</td><td class="n qs-dim">${r.calib.low[sk].toFixed(2)}–${r.calib.high[sk].toFixed(2)}</td><td class="n"><b>×${factorShown(sk).toFixed(2)}</b></td>${matchCell(r.calib.real[sk], estOf(sk))}</tr>`).join('')}
           <tr style="border-top:1px solid #2b2b3a;"><td><b>Total</b></td><td></td><td class="n"><b>${fmt(calibTotal.real)}</b></td><td class="n">${calibTotal.est > 0 ? `<b>${fmt(calibTotal.est)}</b>` : '<span class="qs-dim">–</span>'}</td><td></td><td></td>${matchCell(calibTotal.real, calibTotal.est)}</tr>
         </tbody></table></div>` : '<div class="qs-dim" style="color:#fca5a5;">No recent plays of these maps: nothing to match against.</div>'}
@@ -1346,7 +1343,7 @@ export const mount = (meta, host) => {
       const lines = skillsHere.map((sk, k) => {
         const pts = own.map(({ p }) => `${xAt(p.start).toFixed(1)},${yAt(xpOf(p, sk)).toFixed(1)}`).join(' ');
         return `<polyline points="${pts}" fill="none" stroke="${COLORS[k % COLORS.length]}" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
-          + (own.length <= 40 ? own.map(({ p }) => `<circle cx="${xAt(p.start).toFixed(1)}" cy="${yAt(xpOf(p, sk)).toFixed(1)}" r="2" fill="${COLORS[k % COLORS.length]}"><title>${SKILL_NAMES[sk]} at ${clock(p.start)}: ${fmt(xpOf(p, sk))}</title></circle>`).join('') : '');
+          + (own.length <= 40 ? own.map(({ p }) => `<circle cx="${xAt(p.start).toFixed(1)}" cy="${yAt(xpOf(p, sk)).toFixed(1)}" r="2" fill="${COLORS[k % COLORS.length]}"><title>${SKILL_NAMES[sk]} at ${clock(p.start)}: ${fmt(xpOf(p, sk))}${MINDBLOCK.has(sk) ? ` · mindblock ×${num(p.block ?? 1).toFixed(2)}` : ''}</title></circle>`).join('') : '');
       }).join('');
       const upMarks = own.filter(({ p }) => p.ups && p.ups.length).map(({ p }) => `<line x1="${xAt(p.end).toFixed(1)}" x2="${xAt(p.end).toFixed(1)}" y1="0" y2="${Hc}" stroke="#4ade80" stroke-dasharray="2 3" opacity=".5"><title>${p.ups.map(u => `${SKILL_NAMES[u.skill]} ${u.level}`).join(', ')}</title></line>`).join('');
       const hourLines = [];
@@ -1368,6 +1365,8 @@ export const mount = (meta, host) => {
             <span class="qs-dim">Plays</span><span><b>${own.length}</b> in the next ${durH(spanH * 3600)}</span>
             <span class="qs-dim">XP</span><span><b>${fmt(sum)}</b> in all, <b>${fmt(sum / own.length)}</b> a play on average</span>
             <span class="qs-dim">Over time</span><span>${fmt(firstT)} on its first play, ${fmt(lastT)} on its last (<span style="color:${change >= 0 ? '#4ade80' : '#f87171'}">${change >= 0 ? '+' : ''}${Math.round(change * 100)}%</span>)</span>
+            ${skillsHere.some(sk => MINDBLOCK.has(sk)) ? `<span class="qs-dim">Mindblock</span><span>×${num(own[0].p.block ?? 1).toFixed(2)} on its first play, ×${num(own[own.length - 1].p.block ?? 1).toFixed(2)} on its last</span>` : ''}
+            <span class="qs-dim">Bonuses</span><span>${medals.ok ? `medals ×${medals.multiplier.toFixed(3)}` : 'medals unknown'}${skillsHere.filter(sk => geneOf(sk) > 1).length ? ` · genetics ${skillsHere.filter(sk => geneOf(sk) > 1).map(sk => `${SKILL_SHORT[sk]} ×${geneOf(sk).toFixed(2)}`).join(', ')}` : ''}</span>
             ${ups.length ? `<span class="qs-dim">Level-ups</span><span class="qs-up">${ups.map(u => `${SKILL_NAMES[u.skill]} ${u.level}`).join(', ')}</span>` : ''}
           </div>
           <div class="qs-dim" style="margin-bottom:4px;">${legend}</div>
@@ -1441,7 +1440,7 @@ export const mount = (meta, host) => {
       <div class="qs-card" style="margin-bottom:10px;">
         <div class="qs-row" style="margin-bottom:6px;"><div class="qs-h" style="margin:0;">Diagnostics</div>
           <span class="qs-dim">Something looks wrong? Copy this and send it to Rai.</span>
-          <button type="button" class="qs-plain qs-diag-copy" style="margin-left:auto;">Copy diagnostics</button>
+          <button type="button" class="qs-plain qs-diag-copy" style="margin-left:auto;" title="Diagnostics, the forecast plays and your recent real plays, in one">Copy for Rai</button>
           <button type="button" class="qs-plain qs-diag-console">Open in console</button></div>
         <div class="qs-diag">${diag.health.map(([k, state, v]) => `<span title="${esc(v)}"><i style="background:${DOT[state]}"></i><b>${k}</b> ${esc(v)}</span>`).join('')}</div>
       </div>`;
@@ -1454,11 +1453,10 @@ export const mount = (meta, host) => {
             <button type="button" class="qs-view" data-view="table" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'table' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Table</button>
             <button type="button" class="qs-view" data-view="cards" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'cards' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Cards</button>
           </div>
-          <span class="qs-dim">${debugView === 'cards' ? 'One map at a time: its XP per play over the forecast.' : 'XP after calibration. Hover a number for the simulator\'s own; hover strain or Tries for the step it was simulated at.'}</span>
+          <span class="qs-dim">${debugView === 'cards' ? 'One map at a time: its XP per play over the forecast.' : 'XP with mindblock, medals and genetics. Hover a number for the simulator\'s own; hover strain or Tries for its step.'}</span>
           ${debugView === 'table' ? `<span class="qs-dim" style="margin-left:auto;">Show</span>
           <select class="qs-debug-limit"><option value="50"${debugLimit === 50 ? ' selected' : ''}>first 50 plays</option><option value="200"${debugLimit === 200 ? ' selected' : ''}>first 200 plays</option><option value="0"${debugLimit === 0 ? ' selected' : ''}>all ${r.plays.length} plays</option></select>` : '<span style="margin-left:auto;"></span>'}
           <button type="button" class="qs-plain qs-console" title="Your recent plays as the game stored them, and the calibration play by play">Console</button>
-          <button type="button" class="qs-plain qs-copy">Copy as text</button>
         </div>
         ${debugView === 'cards' ? mapCard : `<div class="qs-tablewrap"><table>
           <thead><tr><th>#</th><th>Map</th><th class="n">Starts</th><th class="n">Strain in</th><th class="n">Tries</th><th class="n">Strain / Length</th><th class="n">Bar after</th><th class="n" title="Mindblock: how many of the last 50 plays were this map, and the XP left on the skills it cuts">Mindblock</th>${SKILLS.map(sk => `<th class="n" title="${SKILL_NAMES[sk]}">${SKILL_SHORT[sk]}</th>`).join('')}<th class="n">Total</th><th>Sim</th></tr></thead>
@@ -1474,7 +1472,7 @@ export const mount = (meta, host) => {
       lines.push(`Simulator\t${asked} new\t${reused} reused\tRuns\t${r.runs || 1}\tForecast\t${r.plays.length} plays\t${dur(spanH * 3600)}`);
       lines.push(`Medals\t${medals.ok ? `x${medals.multiplier.toFixed(4)}\t${medals.held} held\t${medals.unknown} unknown` : 'server not reached'}\tRecent plays at start\t${num(r.recentStart)}`);
       lines.push('');
-      lines.push(['Calibration', 'Plays', 'Real', 'With your bonuses', 'Factor', 'Match'].join('\t'));
+      lines.push(['Calibration', 'Plays', 'Real', 'With bonuses', 'Factor', 'Match'].join('\t'));
       for (const sk of calibSkills) lines.push([SKILL_NAMES[sk], r.calib.n[sk], Math.round(r.calib.real[sk]), Math.round(estOf(sk)), factorShown(sk).toFixed(3), estOf(sk) > 0 ? matchText(r.calib.real[sk] / estOf(sk)) : '-'].join('\t'));
       lines.push('');
       lines.push(['#', 'Map', 'Id', 'Rate', 'Repeat', 'Started', 'Tries', 'Tries from', 'Local Tries'].join('\t'));
@@ -1525,36 +1523,36 @@ export const mount = (meta, host) => {
     }
     const limitBox = outEl.querySelector('.qs-debug-limit');
     if (limitBox) limitBox.onchange = () => { debugLimit = Number(limitBox.value) || 0; renderResult(...lastResult); };
+    const titles = Object.fromEntries(queue.entries.map(e => [e.beatmapId, e.title]));
+    /** The character's last 100 plays as the game stored them, newest first. */
+    const loadPlayed = async () => {
+      let rows = [];
+      let note = '';
+      try {
+        rows = (await gameRows('SELECT x.playedAt AS playedAt, x.beatmapId AS beatmapId, x.gains AS gains, s.rate AS rate, s.mods AS mods, s.accuracy AS accuracy, s.pp AS pp FROM score_xp x LEFT JOIN score s ON s.id = x.scoreId WHERE x.characterId = ? ORDER BY x.playedAt DESC LIMIT 100', [num(ctx.row.id)])) || [];
+      } catch (e) {
+        note = `The game keeps no per-play XP here (${e && e.message ? e.message : e}).`;
+      }
+      const ats = rows.map(x => num(x.playedAt));
+      const played = rows.map(x => {
+        const g = parseGains(x.gains);
+        return {
+          Time: new Date(num(x.playedAt)).toLocaleString(), Map: `#${x.beatmapId}${titles[x.beatmapId] ? ` ${titles[x.beatmapId]}` : ''}`, Rate: num(x.rate) || 1, Mods: x.mods || '',
+          'Acc %': x.accuracy !== null && x.accuracy !== undefined ? `${(num(x.accuracy) * (num(x.accuracy) <= 1 ? 100 : 1)).toFixed(2)}%` : '', pp: Math.round(num(x.pp)),
+          ...Object.fromEntries(SKILLS.map(sk => [SKILL_NAMES[sk], Math.round(num(g[sk]))])),
+        };
+      });
+      return { played, ats, note, newest: ats.length ? Math.max(...ats) : 0 };
+    };
     const consoleBtn = outEl.querySelector('.qs-console');
     if (consoleBtn) {
       consoleBtn.onclick = async () => {
-        const titles = Object.fromEntries(queue.entries.map(e => [e.beatmapId, e.title]));
-        /** The character's last 100 plays as the game stored them, newest first. */
-        const loadPlayed = async () => {
-          let rows = [];
-          let note = '';
-          try {
-            rows = (await gameRows('SELECT x.playedAt AS playedAt, x.beatmapId AS beatmapId, x.gains AS gains, s.rate AS rate, s.mods AS mods, s.accuracy AS accuracy, s.pp AS pp FROM score_xp x LEFT JOIN score s ON s.id = x.scoreId WHERE x.characterId = ? ORDER BY x.playedAt DESC LIMIT 100', [num(ctx.row.id)])) || [];
-          } catch (e) {
-            note = `The game keeps no per-play XP here (${e && e.message ? e.message : e}).`;
-          }
-          const ats = rows.map(x => num(x.playedAt));
-          const played = rows.map(x => {
-            const g = parseGains(x.gains);
-            return {
-              Time: new Date(num(x.playedAt)).toLocaleString(), Map: `#${x.beatmapId}${titles[x.beatmapId] ? ` ${titles[x.beatmapId]}` : ''}`, Rate: num(x.rate) || 1, Mods: x.mods || '',
-              'Acc %': x.accuracy !== null && x.accuracy !== undefined ? `${(num(x.accuracy) * (num(x.accuracy) <= 1 ? 100 : 1)).toFixed(2)}%` : '', pp: Math.round(num(x.pp)),
-              ...Object.fromEntries(SKILLS.map(sk => [SKILL_NAMES[sk], Math.round(num(g[sk]))])),
-            };
-          });
-          return { played, ats, note, newest: ats.length ? Math.max(...ats) : 0 };
-        };
         const calibRows = r.calib && r.calib.detail.length ? r.calib.detail.map(d => ({
           Time: new Date(d.playedAt).toLocaleString(), Map: d.title, Rate: d.rate, Mods: d.mods, 'Tries then': +d.tries.toFixed(2), 'Recent then': d.recentThen, Mindblock: +num(d.block ?? 1).toFixed(3),
           ...Object.fromEntries(SKILLS.filter(sk => r.calib.detail.some(x => num(x.real[sk]) > 0 || num(x.sim[sk]) > 0)).flatMap(sk => [[`${SKILL_SHORT[sk]} real`, Math.round(num(d.real[sk]))], [`${SKILL_SHORT[sk]} sim`, Math.round(num(d.sim[sk]))]])),
         })) : [];
         const calibSummary = r.calib ? Object.keys(r.calib.n).map(sk => ({
-          Skill: SKILL_NAMES[sk], Plays: r.calib.n[sk], Real: Math.round(r.calib.real[sk]), 'With your bonuses': medals.ok ? Math.round(r.calib.sim[sk] * medals.multiplier) : '',
+          Skill: SKILL_NAMES[sk], Plays: r.calib.n[sk], Real: Math.round(r.calib.real[sk]), 'With bonuses': medals.ok ? Math.round(r.calib.sim[sk] * medals.multiplier) : '',
           Factor: +((r.calib.factors[sk] ?? r.calib.ignored[sk]) || 0).toFixed(3), Match: medals.ok && r.calib.sim[sk] > 0 ? matchText(r.calib.real[sk] / (r.calib.sim[sk] * medals.multiplier)) : '',
         })) : [];
         void openConsole({ loadPlayed, calibRows, calibSummary, diag });
@@ -1563,20 +1561,21 @@ export const mount = (meta, host) => {
     const diagCopy = outEl.querySelector('.qs-diag-copy');
     if (diagCopy) {
       diagCopy.onclick = async () => {
-        diagCopy.textContent = (await copyText(diag.text)) ? 'Copied' : 'Copy failed';
-        setTimeout(() => { if (diagCopy.isConnected) diagCopy.textContent = 'Copy diagnostics'; }, 1500);
+        const recent = await loadPlayed();
+        const text = `${diag.text}
+
+== Forecast plays ==
+${debugText()}
+
+== Recent real plays ==
+${recent.note ? `${recent.note}
+` : ''}${tsv(recent.played)}`;
+        diagCopy.textContent = (await copyText(text)) ? 'Copied' : 'Copy failed';
+        setTimeout(() => { if (diagCopy.isConnected) diagCopy.textContent = 'Copy for Rai'; }, 1500);
       };
     }
     const diagConsole = outEl.querySelector('.qs-diag-console');
     if (diagConsole && consoleBtn) diagConsole.onclick = () => { consoleView = 'diag'; consoleBtn.onclick(); };
-    const copyBtn = outEl.querySelector('.qs-copy');
-    if (copyBtn) {
-      copyBtn.onclick = async () => {
-        const ok = await copyText(debugText());
-        copyBtn.textContent = ok ? 'Copied' : 'Copy failed';
-        setTimeout(() => { if (copyBtn.isConnected) copyBtn.textContent = 'Copy as text'; }, 1500);
-      };
-    }
   };
 };
 
