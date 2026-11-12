@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.59';
-export const VERSION_ID = '2026-11-12 06H21M';
+export const VERSION = '1.3.510';
+export const VERSION_ID = '2026-11-12 06H36M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -41,6 +41,7 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
+• Window stays solid while you edit the queue next to it
 • Hotfixes now have their own button
 • Clicks pass through to the mods menu, options and Add-ons
 • Chat shows through the window when you point at it
