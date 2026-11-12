@@ -318,10 +318,17 @@ export const mount = (meta, host) => {
   window.addEventListener('keydown', keyListener, true);
 
   // a click outside the window (and its console) closes it; never while Edit Queue is open, since the player is
-  // editing the queue this window follows
+  // editing the queue this window follows, nor on the button that opens it or the dock it sits in: the window moves
+  // out of the way instead (fitAroundQueue)
+  const opensEditQueue = (el) => {
+    if (el.closest('.dock, [class*="dock__"]')) return true;
+    const btn = el.closest('button, a, [role="button"]');
+    return !!btn && /edit\s+(the\s+)?queue/i.test(`${btn.textContent} ${btn.getAttribute('title') || ''} ${btn.getAttribute('aria-label') || ''}`);
+  };
   outsideListener = (e) => {
     if (!shown() || !(e.target instanceof Element) || editQueueOpen()) return;
     if (root.contains(e.target) || (consoleEl && consoleEl.contains(e.target))) return;
+    if (opensEditQueue(e.target)) { setTimeout(fitAroundQueue, 150); return; }
     hide();
   };
   window.addEventListener('pointerdown', outsideListener, true);
