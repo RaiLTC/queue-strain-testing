@@ -51,6 +51,17 @@ export const CSS = `
 #qs-window .qs-lv-cell { position:relative; }
 #qs-window .qs-lv-uplbl { position:absolute; margin-left:2px; font-size:9px; line-height:11px; color:#fbbf24; font-weight:600; white-space:nowrap; cursor:help; z-index:1; }
 #qs-window .qs-lv-uplbl.above { top:-12px; }
+/* the upgrades after the next one, faint: arrows over or under the bar, or their own lines with the numbers to each side */
+#qs-window .qs-lv-laterbox { position:absolute; left:0; right:0; top:3px; height:9px; pointer-events:none; }
+#qs-window .qs-lv-bar.ups .qs-lv-laterbox { top:14px; }
+#qs-window .qs-lv-later { position:absolute; transform:translateX(-50%); font-size:9px; line-height:10px; color:rgba(251,191,36,.45); white-space:nowrap; cursor:help; pointer-events:auto; display:flex; flex-direction:column; align-items:center; }
+#qs-window .qs-lv-later > i { font-style:normal; font-size:7px; line-height:7px; }
+#qs-window .qs-lv-later.up { bottom:calc(100% + 1px); }
+#qs-window .qs-lv-later.down { top:calc(100% + 1px); }
+#qs-window .qs-lv-later.side { top:calc(100% + 2px); display:block; }
+#qs-window .qs-lv-later.side.l { transform:translateX(calc(-100% - 3px)); }
+#qs-window .qs-lv-later.side.r { transform:translateX(3px); }
+#qs-window .qs-lv-laterline { position:absolute; top:0; height:9px; width:2px; margin-left:-1px; background:rgba(251,191,36,.33); pointer-events:auto; cursor:help; }
 #qs-window .qs-lv-uplbl.below { top:11px; }
 #qs-window .qs-lv-seg > b.qs-lv-up { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#fbbf24; cursor:help; }
 #qs-window .qs-lv-tk { align-self:flex-end; font-size:10px; color:#6b7280; white-space:nowrap; margin-top:2px; overflow:hidden; text-overflow:ellipsis; max-width:100%; }

@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.526';
-export const VERSION_ID = '2026-11-12 18H35M';
+export const VERSION = '1.3.527';
+export const VERSION_ID = '2026-11-12 19H12M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -41,11 +41,9 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
-• Fixed the console getting stuck open
-• Maps that give no XP still count their plays
-• "No XP provided" instead of "Not played yet" for them
-• Calibration's Match column lines up
-• Zero totals in Debug are greyed out`,
+• Levels: the two upgrades after the next one show faintly on the bar
+• Far ones sit under the bar, ones near the next upgrade above it
+• Upgrades close together share one marker`,
 };
 
 // ---------------------------------------------------------------------
