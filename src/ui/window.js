@@ -560,6 +560,8 @@ export const mount = (meta, host) => {
     root.style.setProperty('--qs-phase', `-${Math.round(performance.now() % 2400)}ms`);
     lastResult = [queue, ctx, now, r];
     const endSec = ctx.hours * 3600;
+    /** The look-ahead as set in the options: "never in 6 hours", not "5 hours and 58 minutes". */
+    const aheadText = `${ctx.hours} hour${ctx.hours === 1 ? '' : 's'}`;
     const medals = r.medals || { ok: false, multiplier: 1 };
     /** A skill's bonus: the medals from the server, or when it couldn't be reached, as learned from the real plays. */
     const genetics = r.genetics || {};
@@ -590,26 +592,26 @@ export const mount = (meta, host) => {
     const nowStage = stageOf(now.bar);
     if (nowStage === 'cold' || nowStage === 'warming') {
       const t = when(b => b >= BAR_ZONES[0]);
-      outlook.push(['Sweet Spot', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${durWords(ctx.hours * 3600)}: the queue is too light`]);
+      outlook.push(['Sweet Spot', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${aheadText}: the queue is too light`]);
     }
     const reach = r.samples.findIndex(s => inPeak(s.bar));
     if (reach >= 0) {
       const leave = r.samples.findIndex((s, i) => i > reach && !inPeak(s.bar));
       outlook.push(['Leaves Sweet Spot', leave >= 0
         ? `in <b>${durWords(r.samples[leave].t)}</b>, ${r.samples[leave].bar >= BAR_ZONES[1] ? 'pushed past it: play easier maps' : 'cooled below it: play harder maps'}`
-        : `<b>never</b> in ${durWords(ctx.hours * 3600)}: this queue holds you there`]);
+        : `<b>never</b> in ${aheadText}: this queue holds you there`]);
     }
     const fat = when(b => b >= XP_CUT);
     outlook.push(['<span style="color:#f87171">XP cut</span>', now.minutes >= now.knots[3]
       ? '<b style="color:#f87171">already</b>: past 300 minutes of strain'
       : fat !== undefined
         ? `<b style="color:#f87171">in ${durWords(fat)}</b>, when strain passes 300 minutes`
-        : `<b>never</b> in ${durWords(ctx.hours * 3600)}: strain stays under 300 minutes`]);
+        : `<b>never</b> in ${aheadText}: strain stays under 300 minutes`]);
     if (r.loopSec) {
       const drift = r.loopDrift;
       outlook.push(['One Loop', `${r.loopPlays} play${r.loopPlays === 1 ? '' : 's'} in ${durWords(r.loopSec)}, ${Math.abs(drift) < 0.5 ? 'strain about even' : `${drift > 0 ? '+' : ''}${drift.toFixed(1)} minutes of strain`} each loop`]);
     }
-    outlook.push([`After ${durWords(endSec)}`, `<b>${STAGES[stageOf(last.bar)][0]}</b>, ${minText(last.minutes)} of strain (bar ${(last.bar * 100).toFixed(0)}%)`]);
+    outlook.push([`After ${aheadText}`, `<b>${STAGES[stageOf(last.bar)][0]}</b>, ${minText(last.minutes)} of strain (bar ${(last.bar * 100).toFixed(0)}%)`]);
     const fails = r.plays.filter(p => !p.passed).length;
     if (fails) outlook.push(['Fails', `<span style="color:#fca5a5">${fails} of ${r.plays.length} plays fail</span>, each still tiring you for the whole map`]);
 
@@ -639,7 +641,7 @@ export const mount = (meta, host) => {
             <thead><tr><th>#</th><th>Map</th><th>Starts</th><th>Strain / Length</th><th></th><th>Bar</th></tr></thead>
             <tbody>${playRows}</tbody>
           </table></div>
-          ${r.plays.length > shownPlays.length ? `<div class="qs-dim" style="margin-top:4px;">${r.plays.length - shownPlays.length} more plays in the next ${durWords(ctx.hours * 3600)}.</div>` : ''}
+          ${r.plays.length > shownPlays.length ? `<div class="qs-dim" style="margin-top:4px;">${r.plays.length - shownPlays.length} more plays in the next ${aheadText}.</div>` : ''}
         </div>
       </div>`;
 
@@ -648,7 +650,7 @@ export const mount = (meta, host) => {
     if (hasXp) {
       const lines = [];
       lines.push(['Per hour', `<b>${fmt(perHour(totalOf))}</b> on average`]);
-      lines.push(['Total', `<b>${fmt(r.plays.reduce((t, p) => t + totalOf(p), 0))}</b> in the next ${durWords(spanH * 3600)}`]);
+      lines.push(['Total', `<b>${fmt(r.plays.reduce((t, p) => t + totalOf(p), 0))}</b> in the next ${aheadText}`]);
       const matched = r.calib ? Object.entries(r.calib.factors) : [];
       const ignored = r.calib ? Object.keys(r.calib.ignored || {}) : [];
       lines.push(['Medals', medals.ok
