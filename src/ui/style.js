@@ -37,15 +37,6 @@ export const CSS = `
 #qs-window .qs-num.u-d { color:#f87171; }
 #qs-window .qs-num.u-mo, #qs-window .qs-num.u-y { color:#c084fc; }
 /* the levels bar: a piece per pair of marks, the end mark (and when you reach it) under each */
-#qs-window .qs-mp-chip { display:inline-block; font-size:10px; border:1px solid; border-radius:8px; padding:0 5px; margin-right:3px; white-space:nowrap; }
-#qs-window .qs-mp-panel { width:340px; flex:none; background:#101018; border:1px solid #2b2b3a; border-radius:6px; padding:8px; }
-#qs-window .qs-mp-panel .qs-card { margin:0 !important; padding:0; border:none; background:none !important; }
-#qs-window .qs-mp-row.on { background:rgba(129,140,248,.10); }
-#qs-window .qs-mp-bar { display:flex; gap:2px; }
-#qs-window .qs-mp-bar > div { min-width:3px; display:flex; flex-direction:column; cursor:help; }
-#qs-window .qs-mp-bar > div > i { display:block; height:9px; border-radius:2px; }
-#qs-window .qs-mp-bar > div > span { font-size:10px; color:#9ca3af; margin-top:2px; white-space:nowrap; overflow:hidden; }
-#qs-window .qs-mp-name { display:inline-block; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
 #qs-window .qs-lv-bar { position:relative; display:flex; gap:3px; padding-top:3px; min-width:0; }
 #qs-window .qs-lv-cell { flex:1; min-width:0; display:flex; flex-direction:column; }
 #qs-window .qs-lv-seg { position:relative; height:9px; background:#1d1d28; border-radius:2px; overflow:hidden; }

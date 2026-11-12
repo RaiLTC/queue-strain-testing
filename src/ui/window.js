@@ -91,7 +91,7 @@ export const mount = (meta, host) => {
   let levelsView = 'regular', useRoutes = true;
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
-  let mapsOpen = null, mapsSort = 'eff';
+  let debugView = 'table', debugMap = 0;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1373,80 +1373,6 @@ export const mount = (meta, host) => {
         </div>`;
     };
 
-    // ---- Maps: which maps are worth their time (issue #3). Ranked by XP a minute, like XP-per-hour calculators;
-    // each map's effort against its reward on a scatter, like training-load dashboards; details in a side panel ----
-    const SKILL_COLOR = Object.fromEntries(SKILLS.map((sk, k) => [sk, ['#60a5fa', '#f0883e', '#4ade80', '#c084fc', '#facc15', '#f87171', '#22d3ee', '#fb7185', '#a3e635', '#e879f9', '#94a3b8'][k % 11]]));
-    const MAP_COLOR = ['#818cf8', '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#fb923c', '#a78bfa', '#2dd4bf', '#f87171', '#a3e635'];
-    const mapStats = mapIds.map((id, k) => {
-      const entry = queue.entries.find(e => e.beatmapId === id);
-      const own = r.plays.filter(q => queue.entries[q.entry].beatmapId === id);
-      const bySkill = Object.fromEntries(SKILLS.map(sk => [sk, own.reduce((t, q) => t + xpOf(q, sk), 0)]));
-      const total = own.reduce((t, q) => t + totalOf(q), 0);
-      const minutes = own.reduce((t, q) => t + num(q.lengthMin), 0);
-      const blockLost = own.reduce((t, q) => t + SKILLS.filter(sk => MINDBLOCK.has(sk)).reduce((u, sk) => { const bl = num(q.block ?? 1); return u + (bl > 0 && bl < 1 ? xpOf(q, sk) / bl - xpOf(q, sk) : 0); }, 0), 0);
-      const trend = own.length ? own.reduce((t, q) => t + num(q.trend), 0) / own.length : 0;
-      const bar = own.length ? own.reduce((t, q) => t + num(q.bar), 0) / own.length : 0;
-      const strainPer = own.length ? own.reduce((t, q) => t + num(q.strained), 0) / own.length : 0;
-      const eff = minutes ? total / minutes : 0;
-      // what it does to your strain, in words (as training dashboards label load)
-      const tag = trend < -0.3 ? ['Rests you', '#60a5fa'] : bar >= XP_CUT ? ['Overloads', '#f87171'] : trend > 0.3 && bar < 0.4 ? ['Warms up', '#facc15'] : bar >= 0.6 ? ['Pushes', '#fb923c'] : ['Holds', '#4ade80'];
-      return { id, entry, own, bySkill, total, minutes, blockLost, strainPer, eff, tag, color: MAP_COLOR[k % MAP_COLOR.length] };
-    }).filter(m => m.own.length);
-    const queueTotal = mapStats.reduce((t, m) => t + m.total, 0);
-    const queueMin = mapStats.reduce((t, m) => t + m.minutes, 0);
-    const queuePlays = mapStats.reduce((t, m) => t + m.own.length, 0);
-    const avgMin = queueMin ? queueTotal / queueMin : 0;
-    const sortBy = { eff: m => m.eff, total: m => m.total, plays: m => m.own.length, queue: m => -mapIds.indexOf(m.id) };
-    const sorted = [...mapStats].sort((x, y) => sortBy[mapsSort](y) - sortBy[mapsSort](x));
-    const vsAvg = (v) => { const d = avgMin ? v / avgMin - 1 : 0; return Math.abs(d) < 0.005 ? '' : `<span style="color:${d > 0 ? '#4ade80' : '#f87171'}; font-size:10px;">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>`; };
-    const short = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
-    /** XP a play over the look-ahead, tiny: flat is a map that keeps giving, falling one that wears out. */
-    const spark = (m) => {
-      const v = m.own.map(totalOf), hi = Math.max(...v), lo = Math.min(...v), W = 70, H = 16;
-      const pts = v.map((x, i) => `${(v.length > 1 ? i / (v.length - 1) * W : W / 2).toFixed(1)},${(hi > lo ? H - 2 - (x - lo) / (hi - lo) * (H - 4) : H / 2).toFixed(1)}`).join(' ');
-      const drop = v[0] > 0 ? v[v.length - 1] / v[0] - 1 : 0;
-      return `<svg width="${W}" height="${H}" style="vertical-align:middle;"><polyline points="${pts}" fill="none" stroke="${drop < -0.1 ? '#f87171' : '#9ca3af'}" stroke-width="1.4"/></svg>`;
-    };
-    const chips = (m) => SKILLS.filter(sk => m.bySkill[sk] > 0).sort((x, y) => m.bySkill[y] - m.bySkill[x]).slice(0, 3).map(sk => `<span class="qs-mp-chip" style="border-color:${SKILL_COLOR[sk]}; color:${SKILL_COLOR[sk]};" title="${SKILL_NAMES[sk]}: ${fmt(m.bySkill[sk])}">${SKILL_SHORT[sk]} ${Math.round(m.bySkill[sk] / m.total * 100)}%</span>`).join('');
-    // reward (XP a minute) against effort (strain a play): top left is worth it and easy on you
-    const Ws = 760, Hs = 150, ps = 26;
-    const maxEff = Math.max(1, ...mapStats.map(m => m.eff)) * 1.1, maxStr = Math.max(1, ...mapStats.map(m => m.strainPer)) * 1.1;
-    const sx = (v) => ps + v / maxStr * (Ws - 2 * ps), sy = (v) => Hs - ps + 8 - v / maxEff * (Hs - ps - 8);
-    const scatter = `<svg viewBox="0 0 ${Ws} ${Hs}" width="100%" height="${Hs}" style="display:block; background:#0b0b11; border-radius:4px;">
-      <line x1="${ps}" x2="${Ws - ps}" y1="${sy(avgMin).toFixed(1)}" y2="${sy(avgMin).toFixed(1)}" stroke="#374151" stroke-dasharray="3 3"/><text x="${Ws - ps}" y="${(sy(avgMin) - 3).toFixed(1)}" fill="#6b7280" font-size="9" text-anchor="end">queue average</text>
-      <text x="${ps}" y="12" fill="#6b7280" font-size="9">↑ XP a minute</text><text x="${Ws - ps}" y="${Hs - 4}" fill="#6b7280" font-size="9" text-anchor="end">strain a play →</text>
-      ${mapStats.map(m => `<g class="qs-mp-dot" data-id="${m.id}" style="cursor:pointer;"><circle cx="${sx(m.strainPer).toFixed(1)}" cy="${sy(m.eff).toFixed(1)}" r="${mapsOpen === m.id ? 7 : 5}" fill="${m.color}" stroke="${mapsOpen === m.id ? '#fff' : 'none'}"><title>${esc(m.entry.title)}: ${fmt(m.eff)} XP/min, ${shortTime(m.strainPer)} strain a play</title></circle><text x="${(sx(m.strainPer) + 8).toFixed(1)}" y="${(sy(m.eff) + 3).toFixed(1)}" fill="#9ca3af" font-size="9">${esc(short(m.entry.title.replace(/^.* - /, ''), 22))}</text></g>`).join('')}
-    </svg>`;
-    const openMap = mapStats.find(m => m.id === mapsOpen);
-    const panel = openMap ? `<div class="qs-mp-panel">
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><i style="width:9px; height:9px; border-radius:2px; background:${openMap.color};"></i><b style="color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(openMap.entry.title)}">${esc(openMap.entry.title)}</b><button type="button" class="qs-plain qs-mp-close" style="margin-left:auto;" title="Close">✕</button></div>
-        <div class="qs-facts" style="margin-bottom:6px;">
-          <span class="qs-dim">XP a minute</span><span><b>${fmt(openMap.eff)}</b> ${vsAvg(openMap.eff)} <span class="qs-dim">= ${fmt(openMap.total / openMap.own.length)} a play ÷ ${shortTime(openMap.minutes / openMap.own.length)}</span></span>
-          <span class="qs-dim">Share</span><span>${fmt(openMap.total)} XP, ${queueTotal ? Math.round(openMap.total / queueTotal * 100) : 0}% of the queue · ${openMap.own.length} plays</span>
-          <span class="qs-dim">Strain</span><span><span style="color:${openMap.tag[1]};">${openMap.tag[0]}</span> · ${shortTime(openMap.strainPer)} a play</span>
-          ${openMap.blockLost >= 1 ? `<span class="qs-dim">Mindblock</span><span style="color:#f87171;">−${fmt(openMap.blockLost)} XP over the look-ahead</span>` : ''}
-        </div>
-        ${cardOf(openMap.id)}
-      </div>` : '';
-    const mapsTab = mapStats.length ? `
-      <div class="qs-lv-ov" style="margin-bottom:8px;">
-        <div class="qs-lv-ovline"><b>${fmt(avgMin)} XP/min</b><span class="qs-faint">·</span><span><b>${fmt(queueTotal)}</b> <span class="qs-dim">XP</span></span><span class="qs-faint">·</span><span><b>${fmt(queueTotal / Math.max(1e-9, spanH))}</b> <span class="qs-dim">XP/h</span></span><span class="qs-faint">·</span><span><b>${queuePlays}</b> <span class="qs-dim">plays in the next ${durH(spanH * 3600)}</span></span></div>
-      </div>
-      ${scatter}
-      <div class="qs-row" style="margin:8px 0 4px;"><span class="qs-dim">Sort</span>
-        <select id="qs-mp-sort" style="width:auto; field-sizing:content;">${[['eff', 'XP a minute'], ['total', 'Total XP'], ['plays', 'Plays'], ['queue', 'Queue order']].map(([v, l]) => `<option value="${v}"${v === mapsSort ? ' selected' : ''}>${l}</option>`).join('')}</select>
-        <span class="qs-dim" style="margin-left:auto;">Estimates from the forecast. Click a map for more.</span></div>
-      <div style="display:flex; gap:10px; align-items:flex-start;">
-        <table class="qs-lv" style="flex:1; min-width:0;"><thead><tr><th>Map</th><th class="n" title="XP a minute of the map, against the queue's average: fair between short and long maps">XP/min</th><th title="XP a play over the look-ahead: falling means it wears out">Trend</th><th>Strain</th><th>Trains</th></tr></thead><tbody>
-          ${sorted.map(m => `<tr class="qs-lv-row qs-mp-row${mapsOpen === m.id ? ' on' : ''}" data-id="${m.id}">
-            <td class="qs-lv-skill"><i style="display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; background:${m.color};"></i><span class="qs-mp-name" title="${esc(m.entry.title)}">${esc(m.entry.title)}</span><span class="qs-sub">${m.entry.lockedRate ?? ctx.rate}× · ${m.own.length} plays · ${fmt(m.total)} XP</span></td>
-            <td class="n"><b>${fmt(m.eff)}</b> ${vsAvg(m.eff)}</td>
-            <td>${spark(m)}</td>
-            <td><span style="color:${m.tag[1]};">${m.tag[0]}</span></td>
-            <td>${chips(m)}</td></tr>`).join('')}
-        </tbody></table>
-        ${panel}
-      </div>` : '';
     // ---- Diagnostics: a health line per input, and everything as text to paste (no character id or name) ----
     const diag = (() => {
       const st = r.simStats || { ms: 0, slowest: 0, busy: 0, failed: 0 };
@@ -1509,12 +1435,16 @@ export const mount = (meta, host) => {
       <div class="qs-card">
         <div class="qs-row" style="margin-bottom:6px;">
           <div class="qs-h" style="margin:0;">Every play</div>
+          <div class="qs-pager" style="margin-left:4px;">
+            <button type="button" class="qs-view" data-view="table" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'table' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Table</button>
+            <button type="button" class="qs-view" data-view="cards" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'cards' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Cards</button>
+          </div>
           <span class="qs-dim">${'XP with mindblock, medals and genetics. Hover a number for the simulator\'s own; hover strain or Tries for its step.'}</span>
           ${true ? `<span class="qs-dim" style="margin-left:auto;">Show</span>
           <select class="qs-debug-limit"><option value="50"${debugLimit === 50 ? ' selected' : ''}>first 50 plays</option><option value="200"${debugLimit === 200 ? ' selected' : ''}>first 200 plays</option><option value="0"${debugLimit === 0 ? ' selected' : ''}>all ${r.plays.length} plays</option></select>` : '<span style="margin-left:auto;"></span>'}
           <button type="button" class="qs-plain qs-console" title="Your recent plays as the game stored them, and the calibration play by play">Console</button>
         </div>
-        ${`<div class="qs-tablewrap"><table>
+        ${debugView === 'cards' && mapIds.length ? (() => { debugMap = Math.min(Math.max(0, debugMap), mapIds.length - 1); const e = queue.entries.find(x => x.beatmapId === mapIds[debugMap]); return `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><b style="color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(e.title)}">${esc(e.title)}</b><span class="qs-dim">Id ${e.beatmapId} · ${e.lockedRate ?? `${ctx.rate} (yours)`}× · repeat ${e.repeat} · Tries now ${num(r.memory[e.beatmapId]).toFixed(1)}</span><div class="qs-pager" style="margin-left:auto;"><button type="button" class="qs-map-page" data-step="-1" ${debugMap === 0 ? 'disabled' : ''} title="Previous map">‹</button><span>${debugMap + 1}/${mapIds.length}</span><button type="button" class="qs-map-page" data-step="1" ${debugMap === mapIds.length - 1 ? 'disabled' : ''} title="Next map">›</button></div></div>${cardOf(e.beatmapId)}`; })() : `<div class="qs-tablewrap"><table>
           <thead><tr><th>#</th><th>Map</th><th class="n">Starts</th><th class="n">Strain in</th><th class="n">Tries</th><th class="n">Strain / Length</th><th class="n">Bar after</th><th class="n" title="Mindblock: how many of the last 50 plays were this map, and the XP left on the skills it cuts">Mindblock</th>${SKILLS.map(sk => `<th class="n" title="${SKILL_NAMES[sk]}">${SKILL_SHORT[sk]}</th>`).join('')}<th class="n">Total</th><th>Sim</th></tr></thead>
           <tbody>${debugRows}</tbody>
         </table></div>`}
@@ -1540,9 +1470,9 @@ export const mount = (meta, host) => {
     };
 
     // ---- the tabs ----
-    const available = TABS.filter(([id]) => (id === 'xp' || id === 'levels' ? hasXp : id === 'sv' ? !!svTab : id === 'maps' ? !!mapsTab : true));
+    const available = TABS.filter(([id]) => (id === 'xp' || id === 'levels' ? hasXp : id === 'sv' ? !!svTab : true));
     if (!available.some(([id]) => id === activeTab)) activeTab = 'overview';
-    const content = { overview, xp: xpTab, sv: svTab, maps: mapsTab, levels: levelsTab, debug: debugTab }[activeTab];
+    const content = { overview, xp: xpTab, sv: svTab, levels: levelsTab, debug: debugTab }[activeTab];
     outEl.innerHTML = `
       <div class="qs-tabs">${available.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === activeTab ? 'on' : ''}">${label}</button>`).join('')}</div>
       ${content}`;
@@ -1571,12 +1501,8 @@ export const mount = (meta, host) => {
     for (const btn of outEl.querySelectorAll('.qs-page')) {
       btn.onclick = () => { svPage += Number(btn.dataset.step); renderResult(...lastResult); };
     }
-    for (const g of outEl.querySelectorAll('.qs-mp-dot')) g.onclick = () => { const id = Number(g.dataset.id); mapsOpen = mapsOpen === id ? null : id; renderResult(...lastResult); };
-    const mpClose = outEl.querySelector('.qs-mp-close');
-    if (mpClose) mpClose.onclick = () => { mapsOpen = null; renderResult(...lastResult); };
-    for (const tr of outEl.querySelectorAll('.qs-mp-row')) tr.onclick = () => { const id = Number(tr.dataset.id); mapsOpen = mapsOpen === id ? null : id; renderResult(...lastResult); centerVertically(); };
-    const mpSort = outEl.querySelector('#qs-mp-sort');
-    if (mpSort) mpSort.onchange = () => { mapsSort = mpSort.value; renderResult(...lastResult); };
+    for (const btn of outEl.querySelectorAll('.qs-view')) btn.onclick = () => { debugView = btn.dataset.view; renderResult(...lastResult); };
+    for (const btn of outEl.querySelectorAll('.qs-map-page')) btn.onclick = () => { debugMap += Number(btn.dataset.step); renderResult(...lastResult); };
     const limitBox = outEl.querySelector('.qs-debug-limit');
     if (limitBox) limitBox.onchange = () => { debugLimit = Number(limitBox.value) || 0; renderResult(...lastResult); };
     const titles = Object.fromEntries(queue.entries.map(e => [e.beatmapId, e.title]));
