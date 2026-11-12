@@ -22,7 +22,21 @@ export const NOTICE = {
   text: `The numbers look right so far. Speed Jam and Memory haven't been checked yet: that's next.\nFound something off? Message me (Rai) in the in-game chat if online, or in the official oss!idle Discord`,
 };
 
+// the last big update. Kept exactly as released (id and text), so players who read it don't see it light up again
 export const CHANGELOG = {
+  id: '2026-11-12 05H27M',
+  text: `v1.3.5 · 12 Nov 2026
+• Strain bar shows where you're headed, with a time slider
+• XP loss shown past the XP cut
+• Overall level on top, rebirth time in words
+• Clearer times and colours
+• Smarter window behaviour, with new Window options
+• Bunch of fixes`,
+};
+
+// small fixes since the last big update: the wrench button, glowing orange until read. Empty text hides it;
+// a new id (or text) lights it up again
+export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
 • Clicks pass through to the mods menu, options and Add-ons

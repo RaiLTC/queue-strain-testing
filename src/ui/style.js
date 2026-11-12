@@ -108,6 +108,13 @@ export const CSS = `
 #qs-window .qs-notice.info button { color:#f59e0b; border-color:#b45309; background:rgba(245,158,11,.12); }
 #qs-window .qs-notice.new > button { color:#4ade80; border-color:#16a34a; background:rgba(74,222,128,.12); animation:qs-glow 1.8s ease-in-out infinite; }
 #qs-window .qs-notice.new .qs-notice-pop b { color:#4ade80; }
+/* the hotfixes button glows orange instead */
+#qs-window .qs-notice.qs-hotfix.new > button { color:#fb923c; border-color:#c2410c; background:rgba(251,146,60,.12); animation:qs-glow-orange 1.8s ease-in-out infinite; }
+#qs-window .qs-notice.qs-hotfix.new .qs-notice-pop b { color:#fb923c; }
+@keyframes qs-glow-orange {
+  0%, 100% { box-shadow:0 0 0 0 rgba(251,146,60,0); background:rgba(251,146,60,.10); }
+  50% { box-shadow:0 0 10px 2px rgba(251,146,60,.5); background:rgba(251,146,60,.28); }
+}
 @keyframes qs-glow {
   0%, 100% { box-shadow:0 0 0 0 rgba(74,222,128,0); background:rgba(74,222,128,.10); }
   50% { box-shadow:0 0 10px 2px rgba(74,222,128,.5); background:rgba(74,222,128,.28); }

@@ -1,6 +1,6 @@
 // Formatting and the small pieces of the window: bars, graphs, the notice and changelog buttons.
 
-import { CHANGELOG, NOTICE, TEXT } from '../config.js';
+import { CHANGELOG, HOTFIXES, NOTICE, TEXT } from '../config.js';
 import { BAR_ZONES, STAGES, XP_CUT, fatigueLevel, fatigueXp, stageOf } from '../rules/fatigue.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -206,6 +206,22 @@ export const changelogHtml = () => {
     <span class="qs-notice-pop"><b>What's new</b>${esc(CHANGELOG.text || '')}${read
       ? '<span class="qs-notice-foot">Marked as read.</span>'
       : '<span class="qs-notice-foot"><button type="button" class="qs-notice-read" data-kind="log">Mark as read</button></span>'}</span>
+  </span>`;
+};
+
+/** The hotfixes button (a wrench), as HOTFIXES sets it: glowing orange until marked as read, then gray; not shown
+ *  when there are none. */
+export const HOTFIX_READ_KEY = 'queue-strain:hotfixes-read';
+export const hotfixId = () => `${HOTFIXES.id ?? ''}|${HOTFIXES.text}`;
+export const hotfixHtml = () => {
+  if (!HOTFIXES.text) return '';
+  let read = false;
+  try { read = localStorage.getItem(HOTFIX_READ_KEY) === hotfixId(); } catch (_) {}
+  return `<span class="qs-notice qs-hotfix ${read ? 'none' : 'new'}">
+    <button type="button" aria-label="Hotfixes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
+    <span class="qs-notice-pop"><b>Hotfixes</b>${esc(HOTFIXES.text)}${read
+      ? '<span class="qs-notice-foot">Marked as read.</span>'
+      : '<span class="qs-notice-foot"><button type="button" class="qs-notice-read" data-kind="hotfix">Mark as read</button></span>'}</span>
   </span>`;
 };
 

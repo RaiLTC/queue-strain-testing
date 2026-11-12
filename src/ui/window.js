@@ -5,7 +5,7 @@ import { cached, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurv
 import { MINDBLOCK, SKILLS, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
-import { LOG_READ_KEY, MATCH_HELP, NOTICE_READ_KEY, SKILL_NAMES, SKILL_SHORT, STAGE_COLOR, TABS, arrows, barHtml, changelogHtml, clock, dur, durH, durWords, esc, fmt, graphHtml, logId, matchColor, matchText, minText, noticeHtml, noticeId, shortTime, unitsHtml, wireSlider } from './parts.js';
+import { LOG_READ_KEY, MATCH_HELP, NOTICE_READ_KEY, SKILL_NAMES, SKILL_SHORT, STAGE_COLOR, TABS, arrows, barHtml, changelogHtml, clock, hotfixHtml, hotfixId, HOTFIX_READ_KEY, dur, durH, durWords, esc, fmt, graphHtml, logId, matchColor, matchText, minText, noticeHtml, noticeId, shortTime, unitsHtml, wireSlider } from './parts.js';
 import { CSS } from './style.js';
 
 export let root = null;
@@ -34,7 +34,7 @@ export const mount = (meta, host) => {
   root.id = 'qs-window';
   root.className = 'qs-fresh';
   root.innerHTML = `
-    <div class="qs-head"><span class="qs-title">Queue Strain</span><span class="qs-ver">v${VERSION}</span><span class="qs-key">Alt+Shift+F · Esc</span>${noticeHtml()}${changelogHtml()}<button class="qs-x" title="Close">✕</button></div>
+    <div class="qs-head"><span class="qs-title">Queue Strain</span><span class="qs-ver">v${VERSION}</span><span class="qs-key">Alt+Shift+F · Esc</span>${noticeHtml()}${changelogHtml()}${hotfixHtml()}<button class="qs-x" title="Close">✕</button></div>
     <div class="qs-body">
       <div class="qs-top">
         <div class="qs-card" id="qs-now"><div class="qs-h">Strain Status</div><div class="qs-dim">Press <b>Scan queue</b> to read your strain and simulate the queue that is playing.</div></div>
@@ -338,14 +338,15 @@ export const mount = (meta, host) => {
   const hide = () => { closeConsole(); stopQueueWatch(); changedKey = null; if (scanning) autoPaused = true; stopScan(TEXT.status.closed); root.style.display = 'none'; };
   const shown = () => !!root && root.style.display === 'flex';
   $('.qs-x').onclick = hide;
-  /** Mark as read, on the warning sign and on the changelog: each turns gray and stays so until its id or text changes. */
+  /** Mark as read, on the warning sign, the changelog and the hotfixes: each turns gray and stays so until its id or text changes. */
   const wireNotice = () => {
     for (const btn of root.querySelectorAll('.qs-notice-read')) {
       btn.onclick = (e) => {
         e.stopPropagation();
-        const log = btn.dataset.kind === 'log';
-        try { localStorage.setItem(log ? LOG_READ_KEY : NOTICE_READ_KEY, log ? logId() : noticeId()); } catch (_) {}
-        btn.closest('.qs-notice').outerHTML = log ? changelogHtml() : noticeHtml();
+        const kind = btn.dataset.kind;
+        const [key, id, html] = kind === 'log' ? [LOG_READ_KEY, logId(), changelogHtml] : kind === 'hotfix' ? [HOTFIX_READ_KEY, hotfixId(), hotfixHtml] : [NOTICE_READ_KEY, noticeId(), noticeHtml];
+        try { localStorage.setItem(key, id); } catch (_) {}
+        btn.closest('.qs-notice').outerHTML = html();
         wireNotice();
       };
     }
