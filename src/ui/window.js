@@ -434,6 +434,24 @@ export const mount = (meta, host) => {
     updateOverlays();
   };
   window.addEventListener('pointermove', moveListener, true);
+  // a wheel turned over the chat scrolls the chat, even where this window lies over or under it (issue #11)
+  root.addEventListener('wheel', (e) => {
+    const chat = document.querySelector('.community-chat-container.is-enabled');
+    if (!chat) return;
+    const c = chat.getBoundingClientRect();
+    if (e.clientX < c.left || e.clientX > c.right || e.clientY < c.top || e.clientY > c.bottom) return;
+    // the chat's scrolling list under the mouse: the first element below this window that can scroll
+    const under = document.elementsFromPoint(e.clientX, e.clientY).find(el => !root.contains(el) && chat.contains(el)) || chat;
+    for (let el = under; el && el !== document.body; el = el.parentElement) {
+      const st = getComputedStyle(el);
+      if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 1) {
+        el.scrollTop += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+        e.preventDefault();
+        return;
+      }
+      if (el === chat) break;
+    }
+  }, { passive: false });
   /** The game's menus over or under the window: while the mods menu (in Edit Queue) or the options menu is open,
    *  clicks go through the whole window and it turns see-through; while the chat is open, the part of the window
    *  over it is cut out, so the chat shows and takes clicks there. Run as the mouse moves and with the queue check. */
@@ -1125,6 +1143,8 @@ export const mount = (meta, host) => {
        *  reaches prestige within it shifts its last piece's progress to pink. */
       /** A purchase on the route: "Upgrade #4 at Lv 91 · in 2h 10m". */
       const upgradeWhen = (ev) => (ev.at <= 0 ? TEXT.levels.readyNow : ev.at <= spanSec + 1 ? `in ${dur(ev.at)}` : `~${ev.at < 86400 ? dur(ev.at) : `${Math.floor(Math.round(ev.at / 3600) / 24)}d ${Math.round(ev.at / 3600) % 24}h`}`);
+      /** The nearest upgrade's time, short, for its label on the bar: now, 2h 10m, ~5d 8h. */
+      const upgradeSoon = (ev) => (ev.at <= 0 ? TEXT.levels.upgradeNow : ev.at < 86400 ? `${ev.at > spanSec + 1 ? '~' : ''}${durH(ev.at)}` : `~${unitsHtml(`${Math.floor(Math.round(ev.at / 3600) / 24)}d ${Math.round(ev.at / 3600) % 24}h`)}`);
       const upgradeText = (ev) => `${tx(TEXT.levels.upgradeAt, { k: ev.k, lv: ev.level.toFixed(ev.level % 1 ? 2 : 0) })} · ${upgradeWhen(ev)}`;
       const levelsBar = (x) => {
         const m = x.barMarks, n = m.length - 1;
@@ -1139,14 +1159,19 @@ export const mount = (meta, host) => {
           const at = x.markAt[b2];
           const goal = !x.lifetime && last && x.start >= 100 && b2 === x.need;
           // the route's upgrades bought inside this piece
-          const upMarks = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9).map(ev => `<b class="qs-lv-up" style="left:${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%" title="${esc(upgradeText(ev))}"></b>`).join('');
+          // the route's upgrades bought inside this piece: a line each, its number above it, and for the nearest
+          // one the time until it too ("#4 2h 10m")
+          const here = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9);
+          const leftOf = (ev) => `${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%`;
+          const upMarks = here.map(ev => `<b class="qs-lv-up" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}"></b>`).join('');
+          const upLabels = here.map(ev => `<span class="qs-lv-uplbl${ev === ups[0] ? ' next' : ''}" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}">#${ev.k}${ev === ups[0] ? ` ${upgradeSoon(ev)}` : ''}</span>`).join('');
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
           const completes = endF >= 1 && nowF < 1;
-          cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>
+          cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>${upLabels}
             <span class="qs-lv-tk${last ? '' : ' mid'}${goal ? ' goal' : at !== undefined ? ' time' : ''}">${label}</span></div>`);
         }
-        return `<div class="qs-lv-bar"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}</div>`;
+        return `<div class="qs-lv-bar${ups.length ? ' ups' : ''}"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}</div>`;
       };
       const prestigeText = (x) => {
         if (x.readyAt === 0) return `<span class="qs-ready">${TEXT.levels.readyNow}</span>`;

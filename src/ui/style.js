@@ -45,6 +45,11 @@ export const CSS = `
 #qs-window .qs-lv-seg > i { position:absolute; top:0; bottom:0; left:0; background:var(--qs-now); }
 #qs-window .qs-lv-seg > i.gain { opacity:.45; }
 /* an upgrade bought on the route: a thin amber line on the bar */
+/* above each upgrade line its number, and for the nearest one the time until it */
+#qs-window .qs-lv-bar.ups { padding-top:14px; }
+#qs-window .qs-lv-cell { position:relative; }
+#qs-window .qs-lv-uplbl { position:absolute; top:-12px; transform:translateX(-50%); font-size:9px; line-height:11px; color:rgba(251,191,36,.75); white-space:nowrap; cursor:help; }
+#qs-window .qs-lv-uplbl.next { color:#fbbf24; font-weight:600; }
 #qs-window .qs-lv-seg > b.qs-lv-up { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#fbbf24; cursor:help; }
 #qs-window .qs-lv-tk { align-self:flex-end; font-size:10px; color:#6b7280; white-space:nowrap; margin-top:2px; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 #qs-window .qs-lv-tk.time { color:#c7d2fe; }
