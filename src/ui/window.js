@@ -363,13 +363,18 @@ export const mount = (meta, host) => {
     window.addEventListener('pointerup', up);
   });
 
+  /** Whether one of the game's menus is open: the options menu, or the Add-ons page (told by its title). */
+  const optionsOpen = () => !!document.querySelector('.options__container.open');
+  const addonsPageOpen = () => [...document.querySelectorAll('.page__title')].some(el => el.textContent.trim() === 'Add-ons');
+  const gameMenuOpen = () => optionsOpen() || addonsPageOpen();
+
   // the game's own keys come after: Alt+Shift+F and Esc stop here
   keyListener = (e) => {
     if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyF') {
       e.preventDefault();
       e.stopPropagation();
       if (shown()) hide(); else show();
-    } else if (e.key === 'Escape' && shown() && document.querySelector('.options__container.open, .community-chat-container.is-enabled')) {
+    } else if (e.key === 'Escape' && shown() && (gameMenuOpen() || document.querySelector('.community-chat-container.is-enabled'))) {
       // the game's options menu or chat is open: this Esc is for it, the window stays (the next Esc closes it)
       return;
     } else if (e.key === 'Escape' && shown()) {
@@ -421,8 +426,8 @@ export const mount = (meta, host) => {
   const updateOverlays = () => {
     if (!shown()) return;
     const mods = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
-    const opts = optsBox.checked && !!document.querySelector('.options__container.open');
-    const see = opts ? SETTINGS.optionsSeeThrough : mods ? Number(fadeAmt.value) : 0;
+    const addons = optsBox.checked && addonsPageOpen(), opts = optsBox.checked && optionsOpen();
+    const see = addons ? SETTINGS.addonsSeeThrough : opts ? SETTINGS.optionsSeeThrough : mods ? Number(fadeAmt.value) : 0;
     root.style.pointerEvents = see ? 'none' : '';
     if (see !== passSeeThrough) { passSeeThrough = see; root.classList.toggle('qs-passing', !!see); applyFade(); }
     // the chat's hole, in the window's own pixels: only while the mouse is in the chat's area, so the whole window

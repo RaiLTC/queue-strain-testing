@@ -11,7 +11,7 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.57';
+export const VERSION = '1.3.58';
 export const VERSION_ID = '2026-11-12 05H49M';
 
 // none / info / urgent
@@ -61,6 +61,8 @@ export const SETTINGS = {
   // while the game's options menu is open, clicks go through this window too, and it turns this see-through (%)
   optionsPassThrough: true,
   optionsSeeThrough: 90,
+  // and on the game's Add-ons page, hidden completely
+  addonsSeeThrough: 100,
   // while the chat is open, the part of this window over it is cleared, so the chat shows and takes clicks there
   chatHole: true,
   // the local estimate: each map's newest this many real plays at the queue's rate (closest to your current level)
@@ -132,8 +134,8 @@ export const TEXT = {
     outsideClose: 'Closes it (the game ignores the click)',
     outsideThrough: 'Closes it (the game gets the click too)',
     outsideStay: 'Nothing',
-    optionsPass: 'Click through when options menu is open',
-    optionsPassTip: 'While the game\'s options menu is open, this window turns almost invisible and clicks go through it to the menu.',
+    optionsPass: 'Click through when options or Add-ons is open',
+    optionsPassTip: 'While the game\'s options menu or Add-ons page is open, this window turns see-through (hidden on Add-ons) and clicks go through it to the game.',
     chatHole: 'Show the chat through the window',
     chatHoleTip: 'While the chat is open, the part of this window over it is cleared, so the chat can be read and clicked there.',
     modsPass: 'Click through when mods menu is open',
