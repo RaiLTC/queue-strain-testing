@@ -43,47 +43,35 @@ export const SKILL_SHORT = { accuracy: 'Acc', speed: 'Spd', stamina: 'Sta', jack
 export const STAGE_COLOR = { cold: '#4f9cf5', warming: '#4f9cf5', peak: '#e8c147', pushing: '#f0883e', fatigued: '#c084fc' };
 export const arrows = (trend) => (trend > 0 ? `<span style="color:#f0883e">${'›'.repeat(trend)}</span>` : trend < 0 ? `<span style="color:#4f9cf5">${'‹'.repeat(-trend)}</span>` : '<span class="qs-dim">·</span>');
 
-/** How long the forecast stays at each 1% of the bar: seconds per bin, each step between two samples spread
- *  evenly over the bins it passes through. */
-const timeAtBar = (samples) => {
-  const bins = new Array(100).fill(0);
-  for (let i = 1; i < samples.length; i++) {
-    const a = samples[i - 1], b = samples[i], dt = b.t - a.t;
-    if (!(dt > 0)) continue;
-    const lo = Math.min(99, Math.floor(Math.min(a.bar, b.bar) * 100)), hi = Math.min(99, Math.floor(Math.max(a.bar, b.bar) * 100));
-    for (let k = lo; k <= hi; k++) bins[k] += dt / (hi - lo + 1);
-  }
-  return bins;
-};
-/** The ghost trail's colour at a point of the bar: white below the sweet spot, yellow in it, orange past it, red past the XP cut. */
-const trailColor = (b) => (b < BAR_ZONES[0] ? '#e5e7eb' : b < BAR_ZONES[1] ? '#facc15' : b < XP_CUT ? '#fb923c' : '#f87171');
+/** A zone's colour on the bar: white below the sweet spot, yellow in it, orange past it, red past the XP cut. */
+const zoneColor = (b) => (b < BAR_ZONES[0] ? '#e5e7eb' : b < BAR_ZONES[1] ? '#facc15' : b < XP_CUT ? '#fb923c' : '#f87171');
 
 /** The warm-up bar, as the game draws it: zones and where it is now. Over it, where the forecast takes it:
- *  a ghost trail, thicker and brighter where more time is spent, a faint line to where it ends, and a ghost needle there. */
+ *  a faint band over the range it moves through, and an arrow from now to where it ends, coloured by the zones it crosses. */
 export const barHtml = (bar, ahead) => {
   let future = '';
   if (ahead && ahead.samples.length > 1) {
-    const bins = timeAtBar(ahead.samples);
-    // a little smoothing, so the trail reads as one shape rather than a comb
-    const smooth = bins.map((v, k) => (bins[k - 1] || 0) * 0.25 + v * 0.5 + (bins[k + 1] || 0) * 0.25);
-    const top = Math.max(...smooth);
-    const H = 26, mid = 13;
-    const half = (v) => (v > 0 ? 2 + (v / top) * 4 : 0);
-    const used = smooth.map((v, k) => (v > 0 ? k : -1)).filter(k => k >= 0);
-    let shapes = '';
-    if (used.length && top > 0) {
-      // one slice per 1%, its height and brightness set by the time spent there
-      shapes = smooth.map((v, k) => (v > 0 ? `<rect x="${k}" y="${(mid - half(v)).toFixed(2)}" width="1.02" height="${(2 * half(v)).toFixed(2)}" fill="${trailColor((k + 0.5) / 100)}" opacity="${(0.45 + 0.5 * v / top).toFixed(2)}"/>` : '')).join('');
-      // hover areas of 5% each: how long the forecast stays there
-      for (let k = 0; k < 100; k += 5) {
-        const sec = bins.slice(k, k + 5).reduce((t, v) => t + v, 0);
-        if (sec >= 60) shapes += `<rect class="hit" x="${k}" y="0" width="5" height="${H}" fill="transparent"><title>About ${durWords(sec)} between ${k}% and ${k + 5}%</title></rect>`;
+    const later = ahead.samples.slice(1).map(s => s.bar);
+    const lo = Math.min(...later), hi = Math.max(...later);
+    const end = later[later.length - 1];
+    const hours = `${ahead.hours} hour${ahead.hours === 1 ? '' : 's'}`;
+    future += `<div class="qs-band" style="left:${(lo * 100).toFixed(2)}%; width:${Math.max(0.6, (hi - lo) * 100).toFixed(2)}%" title="Where it moves in the next ${hours}: ${Math.round(lo * 100)}% to ${Math.round(hi * 100)}%"></div>`;
+    const a = bar * 100, e = end * 100, dir = e >= a ? 1 : -1;
+    if (Math.abs(e - a) >= 1) {
+      // the line's colour follows the zones it passes through
+      const stops = [];
+      for (let k = 0; k <= 20; k++) { const o = k / 20; stops.push(`<stop offset="${o}" stop-color="${zoneColor((a + (e - a) * o) / 100)}"/>`); }
+      const id = `qs-arrow-${Math.random().toString(36).slice(2, 8)}`;
+      // a small mark where the bar is after each full hour (the last one is the arrowhead)
+      let marks = '';
+      for (let h = 1; h < ahead.hours; h++) {
+        const s = ahead.samples.find(x => x.t >= h * 3600);
+        if (!s) break;
+        marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".85"><title>After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%</title></line>`;
       }
+      future += `<svg class="qs-arrow" viewBox="0 0 100 10" preserveAspectRatio="none"><title>After ${hours}: ${Math.round(e)}%</title><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.toFixed(2)}" x2="${e.toFixed(2)}" y1="0" y2="0">${stops.join('')}</linearGradient></defs><line x1="${a.toFixed(2)}" x2="${(e - dir * 1.2).toFixed(2)}" y1="5" y2="5" stroke="url(#${id})" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path d="M${e.toFixed(2)} 5 L${(e - dir * 1.4).toFixed(2)} 1.8 L${(e - dir * 1.4).toFixed(2)} 8.2 Z" fill="${zoneColor(end)}"/>${marks}</svg>`;
     }
-    const end = ahead.samples[ahead.samples.length - 1].bar;
-    future += `<div class="qs-path" style="left:${(Math.min(bar, end) * 100).toFixed(2)}%; width:${(Math.abs(end - bar) * 100).toFixed(2)}%"></div>`;
-    future += `<svg class="qs-trail" viewBox="0 0 100 ${H}" preserveAspectRatio="none">${shapes}</svg>`;
-    future += `<div class="qs-ghost" style="left:${(end * 100).toFixed(2)}%" title="After ${ahead.hours} hour${ahead.hours === 1 ? '' : 's'}: ${(end * 100).toFixed(0)}%"></div>`;
+    future += `<div class="qs-arrow-label" style="left:${e.toFixed(2)}%" title="After ${hours}: ${Math.round(e)}%">${Math.abs(e - a) < 1 ? 'steady' : 'in'} ${ahead.hours}<small class="qs-u">h</small></div>`;
   }
   return `
   <div class="qs-bar">

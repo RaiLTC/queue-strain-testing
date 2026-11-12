@@ -170,19 +170,18 @@ export const CSS = `
 #qs-window .qs-card { background:#14141c; border:1px solid #23232f; border-radius:6px; padding:9px 11px; min-width:0; }
 #qs-window .qs-h { font-weight:700; color:#fff; margin-bottom:2px; }
 #qs-window .qs-dim { color:#9ca3af; font-size:11px; }
-#qs-window .qs-bar { position:relative; height:24px; margin:16px 2px 24px; }
+#qs-window .qs-bar { position:relative; height:24px; margin:22px 2px 26px; }
 #qs-window .qs-bar-labels { display:flex; justify-content:flex-end; align-items:baseline; gap:8px; font-weight:700; font-size:14px; margin-top:6px; }
 #qs-window .qs-bar-labels .qs-trend { font-size:13px; letter-spacing:-2px; }
 #qs-window .qs-track { position:absolute; left:0; right:0; top:10px; height:6px; border-radius:3px;
   background:linear-gradient(90deg, #4f9cf5 0%, #6fb8c9 22%, #d9c64b 40%, #e8c147 60%, #f0883e 80%, #b48cff 100%); }
 #qs-window .qs-tick { position:absolute; top:5px; width:2px; height:16px; background:#e5e7eb; border-radius:1px; }
 #qs-window .qs-cut { position:absolute; top:3px; width:3px; height:20px; margin-left:-1.5px; background:#ef4444; border-radius:1px; box-shadow:0 0 4px rgba(239,68,68,.7); }
-#qs-window .qs-cut-label { position:absolute; top:-9px; transform:translateX(-50%); font-size:9px; font-weight:700; color:#f87171; white-space:nowrap; }
-/* where the forecast goes: the ghost trail (time spent at each point), a faint line to the end, and a ghost needle there */
-#qs-window .qs-trail { position:absolute; left:0; top:0; width:100%; height:26px; overflow:visible; filter:drop-shadow(0 0 1.5px rgba(0,0,0,.95)) blur(.4px); pointer-events:none; }
-#qs-window .qs-trail .hit { pointer-events:all; }
-#qs-window .qs-path { position:absolute; top:12.5px; height:1px; background:rgba(255,255,255,.3); }
-#qs-window .qs-ghost { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:rgba(255,255,255,.35); border:1px dashed rgba(255,255,255,.7); box-sizing:border-box; border-radius:2px; }
+#qs-window .qs-cut-label { position:absolute; top:-24px; transform:translateX(-50%); font-size:9px; font-weight:700; color:#f87171; white-space:nowrap; }
+/* where the forecast goes: a faint band over its range, and an arrow above the bar from now to where it ends */
+#qs-window .qs-band { position:absolute; top:7px; height:12px; border-radius:6px; background:rgba(255,255,255,.12); }
+#qs-window .qs-arrow { position:absolute; left:0; top:-11px; width:100%; height:10px; overflow:visible; filter:drop-shadow(0 0 1px rgba(0,0,0,.9)); }
+#qs-window .qs-arrow-label { position:absolute; top:30px; transform:translateX(-50%); font-size:10px; color:rgba(229,231,235,.8); white-space:nowrap; }
 #qs-window .qs-needle { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:#fff; border-radius:2px; box-shadow:0 0 4px #000; z-index:1; }
 #qs-window .qs-needle::after { content:''; position:absolute; left:-4px; top:22px; border:6px solid transparent; border-bottom:8px solid #fff; border-top:none; }
 #qs-window .qs-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
