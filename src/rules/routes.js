@@ -57,13 +57,16 @@ export const readRoutes = () => {
  *  over the one it started with. Past the forecast, the same pace is kept up until the prestige level.
  *  `gainOf(play)` is the play's XP as forecast (with today's upgrades). Returns each play's scale (`ratioOf`), the
  *  purchases (`events`: upgrade number, when, at which level), the level after each play (`samples`), and when
- *  the skill can prestige (`readyAt` inside the forecast, `readySec` in all). */
+ *  the skill can prestige (`readyAt` inside the forecast, `readySec` in all). Also the XP farmed along the way
+ *  (levels gained, before the upgrades spend them): at each purchase (`events[].farmed`), at the forecast's end
+ *  (`farmedEnd`) and by the prestige (`farmedTotal`). */
 export const simulateRoute = ({ plays, gainOf, L0, x0, upgrades, overdrive, prestige, route, odPct, need, basePerH, spanSec }) => {
   let u = upgrades, o = overdrive;
   const m0 = routeUpgradeMult(u, o);
   let f = L0 + Math.min(0.999999, Math.max(0, x0 / xpForLevel(L0)));
   const maxU = routeMaxUpgrades(prestige);
   const events = [], samples = [{ t: 0, level: f }], ratioOf = new Map();
+  let farmed = 0, farmedTotal;
   const planned = (k) => Math.max(route[k - 1], routeUpgradeSpecs(k).unlockLevel);
   const canBuy = () => u + 1 <= maxU && u + 1 <= route.length;
   const buy = (t) => {
@@ -73,7 +76,7 @@ export const simulateRoute = ({ plays, gainOf, L0, x0, upgrades, overdrive, pres
     const minSpend = routeCumXp(unlockLevel) - routeCumXp(unlockLevel - drop);
     o += Math.max(1, minSpend > 0 ? spent / minSpend : 1) * (1 + odPct / 100);
     u++;
-    events.push({ k, at: t, level: f, landed });
+    events.push({ k, at: t, level: f, landed, farmed });
     f = landed;
   };
   const buyAll = (t) => { while (canBuy() && f >= planned(u + 1) - 1e-9) buy(t); };
@@ -86,6 +89,7 @@ export const simulateRoute = ({ plays, gainOf, L0, x0, upgrades, overdrive, pres
   const ready = () => !canBuy() && f >= need - 1e-9;
   buyAll(0);
   let readyAt = ready() ? 0 : undefined;
+  if (readyAt === 0) farmedTotal = 0;
   for (const p of plays) {
     // the play's XP at the multiplier of the moment. An upgrade is bought right at its route level, even inside a
     // play: the XP up to that level is spent on getting there, and the rest counts at the new multiplier
@@ -97,17 +101,17 @@ export const simulateRoute = ({ plays, gainOf, L0, x0, upgrades, overdrive, pres
       if (xp < short) break;
       const before = routeUpgradeMult(u, o);
       f = Math.max(f, target);
-      xp -= short; total += short;
+      xp -= short; total += short; farmed += short;
       buy(p.end);
       xp *= routeUpgradeMult(u, o) / before;
     }
     gain(xp);
-    total += xp;
+    total += xp; farmed += xp;
     ratioOf.set(p, base > 0 ? total / base : routeUpgradeMult(u, o) / m0);
-    if (readyAt === undefined && ready()) readyAt = p.end;
+    if (readyAt === undefined && ready()) { readyAt = p.end; farmedTotal = farmed; }
     samples.push({ t: p.end, level: f });
   }
-  const endLevel = f;
+  const endLevel = f, farmedEnd = farmed;
   let readySec = readyAt;
   if (readySec === undefined) {
     readySec = Infinity;
@@ -118,11 +122,13 @@ export const simulateRoute = ({ plays, gainOf, L0, x0, upgrades, overdrive, pres
       if (f >= target - 1e-9) {
         if (canBuy()) { buy(t); continue; }
         readySec = t;
+        farmedTotal = farmed;
         break;
       }
       t += (routeCumXp(target) - routeCumXp(f)) / (perSec * routeUpgradeMult(u, o) / m0);
+      farmed += routeCumXp(target) - routeCumXp(f);
       f = target;
     }
   }
-  return { ratioOf, events, samples, readyAt, readySec, endLevel, tracked: route.length > 0, prestige };
+  return { ratioOf, events, samples, readyAt, readySec, endLevel, farmedEnd, farmedTotal: farmedTotal ?? Infinity, tracked: route.length > 0, prestige };
 };

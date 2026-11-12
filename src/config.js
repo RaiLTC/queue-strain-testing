@@ -219,6 +219,8 @@ export const TEXT = {
     upgradesLeft: 'Upgrades to go',
     upgradeAt: 'Upgrade #{k} at Lv {lv}',
     upgradeNow: 'now',
+    routeNow: 'now',
+    routeBarTip: 'XP still to farm before prestige along your route: {xp}. Each line is an upgrade, placed where along that XP it is bought.',
     routeDone: 'route done',
     noRoute: 'no route for P{p}',
   },

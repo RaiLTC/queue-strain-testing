@@ -1146,7 +1146,21 @@ export const mount = (meta, host) => {
       /** The nearest upgrade's time, short, for its label on the bar: now, 2h 10m, ~5d 8h. */
       const upgradeSoon = (ev) => (ev.at <= 0 ? TEXT.levels.upgradeNow : ev.at < 86400 ? `${ev.at > spanSec + 1 ? '~' : ''}${durH(ev.at)}` : `~${unitsHtml(`${Math.floor(Math.round(ev.at / 3600) / 24)}d ${Math.round(ev.at / 3600) % 24}h`)}`);
       const upgradeText = (ev) => `${tx(TEXT.levels.upgradeAt, { k: ev.k, lv: ev.level.toFixed(ev.level % 1 ? 2 : 0) })} · ${upgradeWhen(ev)}`;
+      /** With a route the level drops at every upgrade, so its bar measures the XP still to farm on the way to
+       *  prestige instead: now at the start, prestige at the end, each upgrade where along that XP it is bought. */
+      const routeBar = (x) => {
+        const s2 = x.sim, total = s2.farmedTotal;
+        const at = (v) => `${Math.max(0, Math.min(100, v / total * 100)).toFixed(2)}%`;
+        const endF = Math.max(0, Math.min(1, s2.farmedEnd / total));
+        const ups = s2.events;
+        const lines = ups.map(ev => `<b class="qs-lv-up" style="left:${at(ev.farmed)}" title="${esc(upgradeText(ev))}"></b>`).join('');
+        const labels = ups.map(ev => `<span class="qs-lv-uplbl${ev === ups[0] ? ' next' : ''}" style="left:${at(ev.farmed)}" title="${esc(upgradeText(ev))}">#${ev.k}${ev === ups[0] ? ` ${upgradeSoon(ev)}` : ''}</span>`).join('');
+        const soon = x.readyAt !== undefined && x.readyAt > 0;
+        return `<div class="qs-lv-bar${ups.length ? ' ups' : ''}" title="${esc(tx(TEXT.levels.routeBarTip, { xp: fmt(total) }))}"><span class="qs-lv-tk first">${TEXT.levels.routeNow}</span><div class="qs-lv-cell"><div class="qs-lv-seg${soon ? ' shift' : ''}">${endF > 0 ? `<i class="gain" style="left:0; width:${(endF * 100).toFixed(2)}%"></i>` : ''}${lines}</div>${labels}
+          <span class="qs-lv-tk goal">${x.need}${soon ? ` · ${durH(x.readyAt)}` : ''}</span></div></div>`;
+      };
       const levelsBar = (x) => {
+        if (x.sim && !x.lifetime && x.sim.tracked && isFinite(x.sim.farmedTotal) && x.sim.farmedTotal > 0) return routeBar(x);
         const m = x.barMarks, n = m.length - 1;
         const soon = !x.lifetime && x.readyAt !== undefined && x.readyAt > 0;
         const ups = x.sim && !x.lifetime ? x.sim.events : [];
@@ -1236,7 +1250,7 @@ export const mount = (meta, host) => {
         ${overallHtml}
         <div class="qs-row" style="margin-bottom:4px;">
           <span class="qs-dim">${TEXT.levels.display}</span>
-          <select id="qs-lv-view" style="width:auto;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute], ['overall-route', TEXT.levels.viewOverallRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
+          <select id="qs-lv-view" style="width:auto; field-sizing:content;">${[['regular', TEXT.levels.viewRegular], ['overall', TEXT.levels.viewOverall], ...(routesOn ? [['regular-route', TEXT.levels.viewRegularRoute], ['overall-route', TEXT.levels.viewOverallRoute]] : [])].map(([v, label]) => `<option value="${v}"${v === viewNow ? ' selected' : ''}>${label}</option>`).join('')}</select>
           ${routesAll ? `<label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.levels.useRoutesTip)}"><input id="qs-lv-routes" type="checkbox"${useRoutes ? ' checked' : ''} style="margin:0;"> ${TEXT.levels.useRoutes}</label>` : ''}
         </div>
         <div class="qs-dim" style="margin-bottom:6px;">${lifetimeView ? TEXT.levels.introOverall : TEXT.levels.intro}${routeView ? ` ${TEXT.levels.introRoute}` : ''}</div>
