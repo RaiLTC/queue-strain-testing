@@ -92,6 +92,9 @@ export const mount = (meta, host) => {
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
+  /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
+  let sgSpeed = 'balanced', sgGoal = 'all';
+  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; } catch (_) {}
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1384,21 +1387,38 @@ export const mount = (meta, host) => {
         </div>`;
     };
 
-    // ---- Suggestions: what if a map went, or got one more repeat? Each change forecast again from the stored
-    // simulator answers (the quick update's way, no new calls for maps already seen) and ranked by XP an hour ----
+    // ---- Suggestions: what would earn more? Changes to the queue (a map out, a repeat more or less, two maps
+    // swapped) are forecast again from the stored simulator answers and ranked. Quick tries each change on its own;
+    // Balanced builds the best combination a step at a time; Thorough keeps three queues going at each step, tries
+    // more kinds of change and checks its best with the simulator ----
     const sg = r.suggest;
-    const sgRows = sg && sg.base > 0 ? [...sg.rows].sort((a, b) => b.xp - a.xp) : [];
-    const sgTable = sgRows.length ? `<div class="qs-tablewrap" style="margin-top:8px;"><table>
-        <thead><tr><th>Change</th><th class="n">XP/h</th><th class="n">vs now</th></tr></thead><tbody>
-        <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.base)}</td><td class="n qs-dim">–</td></tr>
-        ${sgRows.map(v => { const d = v.xp / sg.base - 1, good = d > 0.005; return `<tr${good ? '' : ' class="qs-dim"'}><td class="qs-map" title="${esc(v.title)}">${v.kind === 'remove' ? 'Remove' : `+1 repeat (${v.from} → ${v.from + 1})`} · ${esc(v.title)}</td><td class="n">${fmt(v.xp)}</td><td class="n"${good ? ' style="color:#4ade80; font-weight:600;"' : d < -0.005 ? ' style="color:#f87171;"' : ''}>${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</td></tr>`; }).join('')}
+    const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
+    const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
+    const sgText = (st) => (st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    const sgPct = (v, base) => { const d = base > 0 ? v / base - 1 : 0; return `<span style="color:${d > 0.002 ? '#4ade80' : d < -0.002 ? '#f87171' : '#9ca3af'}; font-weight:600;">${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</span>`; };
+    const sgBest = !sg || !sg.base ? '' : sg.best.length ? sg.best.map((b, i) => `<div class="qs-card" style="background:#101018; margin-top:8px;">
+          <div><b>${sg.best.length > 1 ? `Option ${i + 1}` : sg.speed === 'quick' ? 'Best single change' : 'Best combination'}</b> · ${b.exact !== undefined ? `${sgPct(b.exact, b.exactBase)} <span class="qs-dim">${fmt(b.exact)} ${sgGoalName(sg.goal)} · checked with the simulator</span>` : `${sgPct(b.score, sg.base)} <span class="qs-dim">${fmt(b.score)} ${sgGoalName(sg.goal)} · estimate</span>`}</div>
+          <ol style="margin:4px 0 0 18px; padding:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol>
+        </div>`).join('') : sg.running ? '' : '<div class="qs-dim" style="margin-top:8px;">No change found that beats your queue as it is.</div>';
+    const sgSingles = sg && sg.base && sg.singles.length ? `<div class="qs-dim" style="margin-top:10px;">Each change on its own</div>
+      <div class="qs-tablewrap" style="margin-top:4px;"><table>
+        <thead><tr><th>Change</th><th class="n">${sgGoalName(sg.goal)}</th><th class="n">vs now</th><th>Why</th></tr></thead><tbody>
+        <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.base)}</td><td class="n qs-dim">–</td><td></td></tr>
+        ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${v.score > sg.base * 1.002 ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.score)}</td><td class="n">${sgPct(v.score, sg.base)}</td><td class="qs-dim">${esc(v.why)}</td></tr>`).join('')}
       </tbody></table></div>` : '';
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
-        <div class="qs-dim" style="margin-bottom:6px;">Tries your queue without each map, and with one more repeat of each, and shows which changes give more XP an hour over the next ${aheadText}. Estimates: apply one and rescan for the exact numbers.</div>
-        ${sg && sg.running ? `<div>Checking ${sg.done} of ${sg.of}…</div>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
+        <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more over the next ${aheadText}. Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
+        <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
+          <span class="qs-dim">Speed</span>
+          <select id="qs-sg-speed" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''} title="Quick: each change on its own. Balanced: the best combination, a step at a time. Thorough: more kinds of change, three queues kept at each step, the best checked with the simulator (takes minutes).">${[['quick', 'Quick'], ['balanced', 'Balanced'], ['thorough', 'Thorough']].map(([v, l]) => `<option value="${v}"${v === sgSpeed ? ' selected' : ''}>${l}</option>`).join('')}</select>
+          <span class="qs-dim">Goal</span>
+          <select id="qs-sg-goal" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''}>${[['all', 'All XP'], ...SKILLS.map(sk => [sk, SKILL_NAMES[sk]])].map(([v, l]) => `<option value="${v}"${v === sgGoal ? ' selected' : ''}>${l}</option>`).join('')}</select>
+          ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
+        </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
-        ${sgTable}
+        ${sgBest}
+        ${sgSingles}
       </div>`;
     // ---- Diagnostics: a health line per input, and everything as text to paste (no character id or name) ----
     const diag = (() => {
@@ -1603,30 +1623,108 @@ export const mount = (meta, host) => {
         void openConsole({ loadPlayed, calibRows, calibSummary, diag });
       };
     }
+    const sgSpeedSel = outEl.querySelector('#qs-sg-speed'), sgGoalSel = outEl.querySelector('#qs-sg-goal');
+    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal })); } catch (_) {} };
+    if (sgSpeedSel) sgSpeedSel.onchange = () => { sgSpeed = sgSpeedSel.value; sgSave(); };
+    if (sgGoalSel) sgGoalSel.onchange = () => { sgGoal = sgGoalSel.value; sgSave(); };
+    const sgStop = outEl.querySelector('.qs-suggest-stop');
+    if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
     if (sgBtn) sgBtn.onclick = async () => {
-      const tok = scanToken;
-      const variants = [];
-      queue.entries.forEach((e, i) => {
-        if (queue.entries.length > 1) variants.push({ kind: 'remove', title: e.title, entries: queue.entries.filter((_, j) => j !== i) });
-        variants.push({ kind: 'repeat', title: e.title, from: e.repeat, entries: queue.entries.map((x, j) => (j === i ? { ...x, repeat: x.repeat + 1 } : x)) });
-      });
-      r.suggest = { running: true, done: 0, of: variants.length + 1, rows: [] };
-      renderResult(...lastResult);
-      const perHour = (res) => res.plays.reduce((t, p) => t + totalOf(p), 0) / Math.max(1, ctx.hours);
-      const quickCtx = { ...ctx, quick: true };
-      try {
-        r.suggest.base = perHour(await forecast(queue, quickCtx, () => {}, tok));
-        r.suggest.done = 1;
-        for (const v of variants) {
-          if (tok !== scanToken || lastResult[3] !== r) return;
-          const res = await forecast({ ...queue, entries: v.entries }, quickCtx, () => {}, tok);
-          r.suggest.rows.push({ kind: v.kind, title: v.title, from: v.from, xp: perHour(res) });
-          r.suggest.done++;
-          if (activeTab === 'suggest') renderResult(...lastResult);
+      const tok = scanToken, speed = sgSpeed, goal = sgGoal;
+      const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
+      const s = r.suggest = { running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [] };
+      let drawnAt = 0;
+      const draw = (force) => { if (lastResult[3] === r && activeTab === 'suggest' && (force || Date.now() - drawnAt > 400)) { drawnAt = Date.now(); renderResult(...lastResult); } };
+      const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
+      draw(true);
+      const keyOf = (es) => es.map(e => `${e.beatmapId}@${e.lockedRate ?? ''}x${e.repeat}`).join('|');
+      /** A forecast's worth for the goal, and what explains it: the share of the time in the sweet spot and past
+       *  the XP cut, and the average mindblock. */
+      const measure = (res) => {
+        let xp = 0, min = 0, peak = 0, cut = 0, block = 0;
+        for (const p of res.plays) {
+          const len = num(p.lengthMin) || 1;
+          xp += goal === 'all' ? totalOf(p) : xpOf(p, goal);
+          min += len;
+          if (p.bar >= BAR_ZONES[0] && p.bar < BAR_ZONES[1]) peak += len;
+          if (p.bar >= XP_CUT) cut += len;
+          block += num(p.block ?? 1) * len;
         }
-      } catch (e) { r.suggest.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
-      r.suggest.running = false;
+        return { score: xp / Math.max(1, ctx.hours), m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 } };
+      };
+      const pc = (v) => `${Math.round(v * 100)}%`;
+      const whyOf = (m, bm) => (bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
+        : m.peak - bm.peak >= 0.03 ? `More time in the sweet spot (${pc(bm.peak)} → ${pc(m.peak)})`
+        : m.block - bm.block >= 0.02 ? `Less mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
+        : m.cut - bm.cut >= 0.03 ? `More time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
+        : bm.peak - m.peak >= 0.03 ? `Less time in the sweet spot (${pc(bm.peak)} → ${pc(m.peak)})`
+        : bm.block - m.block >= 0.02 ? `More mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
+        : 'Changes which maps fill your time');
+      const seen = new Map();
+      const evalQ = async (entries, exact) => {
+        const k = `${exact ? 'E' : 'Q'}${keyOf(entries)}`;
+        if (!seen.has(k)) { seen.set(k, measure(await forecast({ ...queue, entries }, { ...ctx, quick: !exact }, () => {}, tok))); s.done++; }
+        return seen.get(k);
+      };
+      /** Every queue one change away: a map out, a repeat more (Thorough: two more) or less, two maps swapped
+       *  (Balanced: neighbours; Thorough: any two). Quick only takes a map out or adds a repeat. */
+      const movesOf = (es) => {
+        const out = [];
+        es.forEach((e, i) => {
+          if (es.length > 1) out.push({ step: { kind: 'remove', a: e.title }, entries: es.filter((_, j) => j !== i) });
+          const rep = (to) => out.push({ step: { kind: 'rep', a: e.title, from: e.repeat, to }, entries: es.map((x, j) => (j === i ? { ...x, repeat: to } : x)) });
+          rep(e.repeat + 1);
+          if (speed === 'thorough') rep(e.repeat + 2);
+          if (speed !== 'quick' && e.repeat > 1) rep(e.repeat - 1);
+        });
+        if (speed !== 'quick' && es.length > 2) {
+          for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) {
+            if (speed !== 'thorough' && j !== i + 1) continue;
+            const sw = [...es]; sw[i] = es[j]; sw[j] = es[i];
+            out.push({ step: { kind: 'swap', a: es[i].title, b: es[j].title }, entries: sw });
+          }
+        }
+        return out;
+      };
+      try {
+        const baseKey = keyOf(queue.entries);
+        const base = await evalQ(queue.entries, false);
+        s.base = base.score;
+        let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
+        const all = [];
+        for (let step = 1; step <= plan.steps && alive(); step++) {
+          const cands = [];
+          for (const f of frontier) for (const mv of movesOf(f.entries)) {
+            if (!alive()) break;
+            const key = keyOf(mv.entries);
+            if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
+            const ev = await evalQ(mv.entries, false);
+            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, parent: f.score, m: ev.m });
+            s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
+            if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, why: whyOf(c.m, base.m) }));
+            draw();
+          }
+          all.push(...cands);
+          s.best = all.filter(c => c.score > base.score * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, entries: c.entries }));
+          // only what beats the queue it came from goes on to the next step
+          frontier = cands.filter(c => c.score > c.parent * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.width);
+          if (!frontier.length) break;
+        }
+        if (speed === 'thorough' && s.best.length && alive()) {
+          s.note = 'Checking the best with the simulator';
+          draw(true);
+          const exactBase = await evalQ(queue.entries, true);
+          for (const b of s.best) {
+            if (!alive()) break;
+            b.exact = (await evalQ(b.entries, true)).score;
+            b.exactBase = exactBase.score;
+            draw(true);
+          }
+          s.best.sort((a, b) => (b.exact ?? b.score) - (a.exact ?? a.score));
+        }
+      } catch (e) { s.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
+      s.running = false;
       if (lastResult[3] === r) renderResult(...lastResult);
     };
     const diagCopy = outEl.querySelector('.qs-diag-copy');
