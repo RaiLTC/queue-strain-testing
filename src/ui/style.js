@@ -13,7 +13,7 @@ export const CSS = `
 #qs-window * { box-sizing:border-box; }
 /* until the first scan: the controls alone, in a window no wider than they need */
 /* the Levels tab */
-#qs-window table.qs-lv td { vertical-align:middle; padding-top:5px; padding-bottom:4px; }
+#qs-window table.qs-lv td { vertical-align:middle; padding-top:6px; padding-bottom:10px; }
 /* the bar sits centred on the skill beside it: room above it as tall as its labels under it (less what marks above it take) */
 #qs-window table.qs-lv .qs-lv-bar { margin-top:12px; }
 #qs-window table.qs-lv .qs-lv-bar.ups { margin-top:1px; }
