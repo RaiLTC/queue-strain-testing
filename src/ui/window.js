@@ -1482,6 +1482,13 @@ export const mount = (meta, host) => {
       <div class="qs-tabs">${available.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === activeTab ? 'on' : ''}">${label}</button>`).join('')}</div>
       ${content}`;
 
+    // the next upgrade's label under a bar: when it would cover one of the bar's level marks (the 100 at its start,
+    // say), it moves above the bar instead
+    for (const lbl of outEl.querySelectorAll('.qs-lv-uplbl.below')) {
+      const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
+      const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
+      if (hits) { lbl.classList.replace('below', 'above'); bar.classList.add('ups'); }
+    }
     for (const tr of outEl.querySelectorAll('.qs-lv-row')) {
       tr.onclick = () => { const k = tr.dataset.skill; if (levelsOpen.has(k)) levelsOpen.delete(k); else levelsOpen.add(k); renderResult(...lastResult); centerVertically(); };
     }
