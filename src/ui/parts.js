@@ -66,7 +66,10 @@ export const barHtml = (bar, ahead) => {
       // with its hour written above it, unless that would overlap a label already placed or the XP cut's
       let marks = '';
       const placed = [XP_CUT * 100];
-      for (let h = 1; h < ahead.hours; h++) {
+      // marks every hour on a long arrow, every few hours on a short one: about one per 6% of the bar it spans
+      const room = Math.floor(Math.abs(e - a) / 6);
+      const step = [1, 2, 3, 4, 6, 8, 12, 24].find(n => Math.ceil(ahead.hours / n) - 1 <= room) ?? 24;
+      for (let h = step; h < ahead.hours; h += step) {
         const s = ahead.samples.find(x => x.t >= h * 3600);
         if (!s) break;
         const x = s.bar * 100;
