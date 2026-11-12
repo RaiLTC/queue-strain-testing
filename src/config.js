@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.5';
-export const VERSION_ID = '2026-11-12 05H27M';
+export const VERSION = '1.3.51';
+export const VERSION_ID = '2026-11-12 05H32M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -25,6 +25,9 @@ export const NOTICE = {
 export const CHANGELOG = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
+• Opening the Window options no longer moves the window
+
+v1.3.5
 • Strain bar shows where you're headed, with a time slider
 • XP loss shown past the XP cut
 • Overall level on top, rebirth time in words
