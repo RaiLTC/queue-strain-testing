@@ -37,7 +37,7 @@ export const mount = (meta, host) => {
         <div class="qs-card">
           <div class="qs-start" id="qs-start-hint">${TEXT.options.scanToStart}</div>
           <div class="qs-row">
-            <span class="qs-dim">${TEXT.options.lookAhead}</span><input id="qs-hours" type="number" min="0.5" max="24" step="0.5" value="${SETTINGS.lookAheadHours}"><span class="qs-dim">${TEXT.options.hours}</span>
+            <span class="qs-dim">${TEXT.options.lookAhead}</span><input id="qs-hours" type="number" min="1" max="24" step="1" inputmode="numeric" value="${SETTINGS.lookAheadHours}"><span class="qs-dim">${TEXT.options.hours}</span>
             <span class="qs-dim" style="margin-left:8px;" title="${esc(TEXT.options.startAtTip)}">${TEXT.options.startAt}</span><input id="qs-start" type="number" min="0" max="420" step="1" placeholder="now"><span class="qs-dim">${TEXT.options.minOfStrain}</span>
             <button class="qs-btn" id="qs-scan" style="margin-left:auto;">${TEXT.options.scan}</button>
           </div>
@@ -59,6 +59,8 @@ export const mount = (meta, host) => {
   const nowEl = $('#qs-now'), outEl = $('#qs-out'), statusEl = $('#qs-status'), scanBtn = $('#qs-scan');
   /** The status line under the buttons, with what hovering it explains (nothing by default). */
   const setStatus = (text, tip = '') => { statusEl.textContent = text; statusEl.title = tip; };
+  /** The look-ahead as whole hours from 1 to 24 (an old saved 6.5 becomes 7). */
+  const wholeHours = (v) => { const n = parseFloat(v); return Math.min(24, Math.max(1, Math.round(Number.isFinite(n) ? n : SETTINGS.lookAheadHours))); };
   const hoursInput = $('#qs-hours'), startInput = $('#qs-start'), runsInput = $('#qs-runs'), memTopInput = $('#qs-memplays-top'), autoBox = $('#qs-auto'), animBox = $('#qs-anim'), localInput = $('#qs-local');
   /** How many of the next plays of each Speed Jam / Memory map to show: set in that tab, 12 at first. */
   let memPlays = SETTINGS.memoryPlays;
@@ -72,7 +74,7 @@ export const mount = (meta, host) => {
   let debugMap = 0;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
-    if (saved.hours) hoursInput.value = saved.hours;
+    if (saved.hours) hoursInput.value = wholeHours(saved.hours);
     autoBox.checked = saved.autoRescan ?? SETTINGS.rescanOnQueueChange;
     animBox.checked = saved.animations ?? SETTINGS.animations;
     if (saved.localPlays) localInput.value = String(Math.min(50, Math.max(1, Math.round(saved.localPlays))));
@@ -82,9 +84,11 @@ export const mount = (meta, host) => {
     memTopInput.value = String(memPlays);
   } catch (_) {}
   const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: parseFloat(hoursInput.value) || 6, runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab })); } catch (_) {}
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab })); } catch (_) {}
   };
-  hoursInput.addEventListener('change', savePrefs);
+  // look-ahead: whole hours from 1 to 24, digits only (no dot, comma, minus or exponent)
+  hoursInput.addEventListener('keydown', (ev) => { if (['.', ',', '-', '+', 'e', 'E'].includes(ev.key)) ev.preventDefault(); });
+  hoursInput.addEventListener('change', () => { hoursInput.value = wholeHours(hoursInput.value); savePrefs(); });
   /** The last result, drawn again when a choice changes: no new scan, no calls. */
   let lastResult = null;
   /** Which Speed Jam / Memory map the tab shows: one at a time, paged with ‹ and ›. */
@@ -354,7 +358,7 @@ export const mount = (meta, host) => {
       if (!queue.entries.length) throw new Error('The queue is empty.');
       scanKey = queueKey(queue.entries);
 
-      const hours = Math.min(24, Math.max(0.5, parseFloat(hoursInput.value) || SETTINGS.lookAheadHours));
+      const hours = wholeHours(hoursInput.value);
       const ctx = {
         api, row, genes, geneSource, gear, startMinutes, hours, runs: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay,
         onRetry: (n, of, pause) => { busyUntil = Date.now() + pause; busyNote = tx(TEXT.status.busyNote, { n, of }); setStatus(tx(TEXT.status.busy, { sec: Math.round(pause / 1000), n, of })); },
