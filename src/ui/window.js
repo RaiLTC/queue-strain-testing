@@ -931,13 +931,13 @@ export const mount = (meta, host) => {
       const prestigeText = (x) => {
         if (x.readyAt === 0) return `<span class="qs-ready">${TEXT.levels.readyNow}</span>`;
         if (!isFinite(x.readySec)) return '<span class="qs-faint">–</span>';
-        return x.readyAt !== undefined ? `<span class="qs-ready">in ${durH(x.readySec, true)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${longDur(x.readySec)}</span>`;
+        return x.readyAt !== undefined ? `<span style="font-weight:600;">in ${durH(x.readySec, true)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${longDur(x.readySec)}</span>`;
       };
       /** The overall rebirth time in words, numbers coloured: "in 3 days and 4 hours". */
       const wordsDur = (sec) => `in ${durWords(sec, true, true)}`;
       const overallText = (x) => {
         if (x.readyAt === 0 || !isFinite(x.readySec)) return prestigeText(x);
-        return x.readyAt !== undefined ? `<span class="qs-ready">${wordsDur(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${wordsDur(x.readySec)}</span>`;
+        return x.readyAt !== undefined ? `<span style="font-weight:600;">${wordsDur(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${wordsDur(x.readySec)}</span>`;
       };
       const shareOf = (x) => (totalPerH > 0 ? Math.round(x.perH / totalPerH * 100) : 0);
       const detailRow = (x) => {
