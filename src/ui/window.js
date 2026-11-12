@@ -10,6 +10,8 @@ import { CSS } from './style.js';
 
 export let root = null;
 export let keyListener = null;
+/** Closes the window on a click outside it. */
+export let outsideListener = null;
 export let styleEl = null;
 /** Bumped to stop a scan that is running. */
 export let scanToken = 0;
@@ -149,7 +151,7 @@ export const mount = (meta, host) => {
     return (maps(then) === maps(now) ? SETTINGS.rescanWaitSec.repeats : SETTINGS.rescanWaitSec.maps) * 1000;
   };
   /** The queue is checked every SETTINGS.queueCheckMs, only while the window is open. */
-  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(watchQueue, SETTINGS.queueCheckMs); };
+  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); watchQueue(); }, SETTINGS.queueCheckMs); };
   const stopQueueWatch = () => { if (queueTimer) { clearInterval(queueTimer); queueTimer = null; } };
   const watchQueue = () => {
     if (!root || !shown() || !scanKey || autoPaused) return;
@@ -233,7 +235,30 @@ export const mount = (meta, host) => {
     const r = root.getBoundingClientRect();
     root.style.top = `${Math.max(0, Math.round((innerHeight - r.height) / 2))}px`;
   };
-  const show = () => { root.style.display = 'flex'; startQueueWatch(); };
+  /** While the game's Edit Queue is open (the dock moves to the left column, without its source line), the window
+   *  moves out of its way to the right and is centred top to bottom. It goes back to where it was when Edit Queue
+   *  closes, unless the player moved it in between. */
+  let beforeEdit = null;
+  const editQueueOpen = () => !document.querySelector('.dock__source') && !!document.querySelector('.dock');
+  const fitAroundQueue = () => {
+    if (!shown()) return;
+    if (editQueueOpen()) {
+      const dock = document.querySelector('.dock').getBoundingClientRect(), r = root.getBoundingClientRect();
+      if (beforeEdit || r.left >= dock.right + 8) return;
+      beforeEdit = { left: root.style.left, top: root.style.top, right: root.style.right };
+      root.style.left = `${Math.max(0, Math.min(Math.round(dock.right + 12), innerWidth - r.width))}px`;
+      root.style.right = 'auto';
+      centerVertically();
+      beforeEdit.placed = { left: root.style.left, top: root.style.top };
+    } else if (beforeEdit) {
+      // put it back only if it is still where it was moved to
+      if (root.style.left === beforeEdit.placed.left && root.style.top === beforeEdit.placed.top) {
+        root.style.left = beforeEdit.left; root.style.top = beforeEdit.top; root.style.right = beforeEdit.right;
+      }
+      beforeEdit = null;
+    }
+  };
+  const show = () => { root.style.display = 'flex'; startQueueWatch(); fitAroundQueue(); };
   /** Whether a scan is running: the button reads Stop while it is. */
   let scanning = false;
   const setScanning = (on) => {
@@ -291,6 +316,15 @@ export const mount = (meta, host) => {
     }
   };
   window.addEventListener('keydown', keyListener, true);
+
+  // a click outside the window (and its console) closes it; never while Edit Queue is open, since the player is
+  // editing the queue this window follows
+  outsideListener = (e) => {
+    if (!shown() || !(e.target instanceof Element) || editQueueOpen()) return;
+    if (root.contains(e.target) || (consoleEl && consoleEl.contains(e.target))) return;
+    hide();
+  };
+  window.addEventListener('pointerdown', outsideListener, true);
 
   const renderNow = (c) => {
     const [name, hint] = STAGES[c.stage];
@@ -1311,6 +1345,10 @@ export const unmount = () => {
   if (keyListener) {
     window.removeEventListener('keydown', keyListener, true);
     keyListener = null;
+  }
+  if (outsideListener) {
+    window.removeEventListener('pointerdown', outsideListener, true);
+    outsideListener = null;
   }
   if (root) { root.remove(); root = null; }
   if (styleEl) { styleEl.remove(); styleEl = null; }
