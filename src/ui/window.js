@@ -124,7 +124,14 @@ export const mount = (meta, host) => {
     fadeAmt.disabled = !fadeBox.checked && !modsBox.checked;
     // while clicks pass through (mods menu, options menu) it is see-through too, whether or not fading is on
     if (passSeeThrough) { root.style.opacity = String(1 - passSeeThrough / 100); return; }
-    const fade = fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh');
+    let fade = fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh');
+    // while editing the queue (the dock without its source line), stay solid while the mouse works in the queue,
+    // to the left of the window, inside a cone that widens from its left edge at 45° (the "safe triangle" of menus,
+    // so a slanted move into the queue doesn't count as leaving); fade above or below that cone, or to its right
+    if (fade && !document.querySelector('.dock__source') && document.querySelector('.dock')) {
+      const r = root.getBoundingClientRect(), d = r.left - mouseX;
+      if (d > 0 && mouseY >= r.top - d && mouseY <= r.bottom + d) fade = false;
+    }
     root.style.opacity = fade ? String(1 - Number(fadeAmt.value) / 100) : '';
   };
   /** How see-through the window is while clicks pass through it (in %), or 0 while they don't. */
@@ -426,6 +433,7 @@ export const mount = (meta, host) => {
    *  over it is cut out, so the chat shows and takes clicks there. Run as the mouse moves and with the queue check. */
   const updateOverlays = () => {
     if (!shown()) return;
+    if (!mouseIn) applyFade(); // the mouse moving between the queue and the right side changes the fade while editing
     const mods = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
     const addons = optsBox.checked && addonsPageOpen(), opts = optsBox.checked && optionsOpen();
     const see = addons ? SETTINGS.addonsSeeThrough : opts ? SETTINGS.optionsSeeThrough : mods ? Number(fadeAmt.value) : 0;
