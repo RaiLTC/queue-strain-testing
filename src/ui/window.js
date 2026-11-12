@@ -92,6 +92,8 @@ export const mount = (meta, host) => {
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
+  /** The Levels bar's width when last drawn, to tell in pixels when upgrade marks would crowd each other. */
+  let lastLvBarW = 500;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1200,33 +1202,34 @@ export const mount = (meta, host) => {
           cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>${upLabels}
             <span class="qs-lv-tk${last ? '' : ' mid'}${goal ? ' goal' : at !== undefined ? ' time' : ''}">${label}</span></div>`);
         }
-        // the two upgrades after the next one, faint: an arrow under the bar when far from the next upgrade, over it
-        // when close (merged there into one). Two close together with the next far: their lines, numbers pushed to
-        // each side; practically on the same spot, or at the bar's ends, one arrow with both numbers
+        // the two upgrades after the next one, faint: each its own line with its number under it; close together (or
+        // inside your progress) one arrow with both numbers, over the bar when close to the next upgrade
         const posOf = (lv) => { for (let k = 0; k < n; k++) if (lv > m[k] - 1e-9 && lv <= m[k + 1] + 1e-9) return (k + (lv - m[k]) / (m[k + 1] - m[k])) / n; return null; };
         const leftAt = (X) => `calc((100% - ${(n - 1) * 3}px) * ${X.toFixed(5)} + ${(Math.min(n - 1, Math.floor(X * n)) * 3)}px)`;
         const nextX = next ? posOf(next.level) : null, nowX = posOf(x.start) ?? 0;
-        const NEAR = 0.006, CLOSE = 0.06, EDGE = 0.06;
-        const later = ups.slice(1, 3).map(ev => ({ ev, X: posOf(ev.level) })).filter(o => o.X !== null).sort((a, b) => a.X - b.X);
+        // closeness in pixels (the bar's width from the last time it was drawn): a label is about 30px wide
+        const CLOSE = 30 / Math.max(120, lastLvBarW);
+        const later = ups.slice(1, 3).map(ev => ({ ev, X: posOf(ev.level) })).filter(o => o.X !== null).sort((p1, p2) => p1.X - p2.X);
         const groups = [];
-        for (const o of later) { const g = groups[groups.length - 1]; if (g && o.X - g[g.length - 1].X < NEAR) g.push(o); else groups.push([o]); }
+        for (const o of later) { const g = groups[groups.length - 1]; if (g && o.X - g[g.length - 1].X < CLOSE) g.push(o); else groups.push([o]); }
         const gX = (g) => g.reduce((t, o) => t + o.X, 0) / g.length;
-        const nums = (g) => g.map(o => o.ev).sort((a, b) => a.k - b.k).map(ev => `#${ev.k}`).join(', ');
+        const nums = (g) => g.map(o => o.ev).sort((e1, e2) => e1.k - e2.k).map(ev => `#${ev.k}`).join(', ');
         const tipOf = (g) => esc(g.map(o => upgradeText(o.ev)).join('\n'));
-        const nearNext = nextX !== null ? groups.filter(g => Math.abs(gX(g) - nextX) < CLOSE) : [];
-        const far = groups.filter(g => !nearNext.includes(g));
         let marks = '';
-        if (nearNext.length) {
-          const g = nearNext.flat(), X = gX(g);
-          above = true;
-          marks += `<span class="qs-lv-later up" style="left:${leftAt(X)};" title="${tipOf(g)}">${nums(g)}<i>▼</i></span>`;
+        for (const g of groups) {
+          const X = gX(g), nearNext = nextX !== null && Math.abs(X - nextX) < CLOSE;
+          if (nearNext) {
+            // close to the next upgrade: one arrow over the bar, out of its label's way
+            above = true;
+            marks += `<span class="qs-lv-later up" style="left:${leftAt(X)};" title="${tipOf(g)}">${nums(g)}<i>▼</i></span>`;
+          } else if (g.length > 1 || X <= nowX + 1e-9) {
+            // several on one spot, or one inside your progress (a line there would hide in the fill): one arrow under the bar
+            marks += `<span class="qs-lv-later down" style="left:${leftAt(X)};" title="${tipOf(g)}"><i>▲</i>${nums(g)}</span>`;
+          } else {
+            // on its own: a faint line, its number under it
+            marks += `<b class="qs-lv-laterline" style="left:${leftAt(X)};" title="${tipOf(g)}"></b><span class="qs-lv-later side r" style="left:${leftAt(X)};" title="${tipOf(g)}">${nums(g)}</span>`;
+          }
         }
-        const arrowBelow = (g) => `<span class="qs-lv-later down" style="left:${leftAt(gX(g))};" title="${tipOf(g)}"><i>▲</i>${nums(g)}</span>`;
-        if (far.length === 2 && far[1][0].X - far[0][0].X < CLOSE) {
-          const [a, b] = far, inFill = gX(a) <= nowX + 1e-9, edge = gX(a) < EDGE || gX(b) > 1 - EDGE;
-          if (inFill || edge || a.length > 1 || b.length > 1) marks += arrowBelow([...a, ...b]);
-          else marks += [a, b].map((g, i) => `<b class="qs-lv-laterline" style="left:${leftAt(gX(g))};" title="${tipOf(g)}"></b><span class="qs-lv-later side${i ? ' r' : ' l'}" style="left:${leftAt(gX(g))};" title="${tipOf(g)}">${nums(g)}</span>`).join('');
-        } else marks += far.map(arrowBelow).join('');
         return `<div class="qs-lv-bar${above ? ' ups' : ''}"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}${marks ? `<div class="qs-lv-laterbox">${marks}</div>` : ''}</div>`;
       };
       const prestigeText = (x) => {
@@ -1511,6 +1514,7 @@ export const mount = (meta, host) => {
 
     // the next upgrade's label under a bar: when it would cover one of the bar's level marks (the 100 at its start,
     // say), it moves above the bar instead
+    { const lvBar = outEl.querySelector('.qs-lv-bar .qs-lv-cell'); if (lvBar) { const w = lvBar.closest('.qs-lv-bar').getBoundingClientRect().width; if (w > 100) lastLvBarW = w; } }
     // the faint later upgrades under a bar: one that would cover a level mark moves above the bar
     for (const lbl of outEl.querySelectorAll('.qs-lv-later.down, .qs-lv-later.side')) {
       const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();

@@ -13,7 +13,10 @@ export const CSS = `
 #qs-window * { box-sizing:border-box; }
 /* until the first scan: the controls alone, in a window no wider than they need */
 /* the Levels tab */
-#qs-window table.qs-lv td { vertical-align:top; padding-top:5px; padding-bottom:4px; }
+#qs-window table.qs-lv td { vertical-align:middle; padding-top:5px; padding-bottom:4px; }
+/* the bar sits centred on the skill beside it: room above it as tall as its labels under it (less what marks above it take) */
+#qs-window table.qs-lv .qs-lv-bar { margin-top:12px; }
+#qs-window table.qs-lv .qs-lv-bar.ups { margin-top:1px; }
 #qs-window .qs-lv-row { cursor:pointer; }
 #qs-window .qs-lv-row:hover td { background:#17171f; }
 #qs-window .qs-lv-row.open td, #qs-window .qs-lv-detail td { background:#171722; }
@@ -56,11 +59,11 @@ export const CSS = `
 #qs-window .qs-lv-bar.ups .qs-lv-laterbox { top:14px; }
 #qs-window .qs-lv-later { position:absolute; transform:translateX(-50%); font-size:9px; line-height:10px; color:rgba(251,191,36,.45); white-space:nowrap; cursor:help; pointer-events:auto; display:flex; flex-direction:column; align-items:center; }
 #qs-window .qs-lv-later > i { font-style:normal; font-size:7px; line-height:7px; }
-#qs-window .qs-lv-later.up { bottom:calc(100% + 1px); }
+#qs-window .qs-lv-later.up { bottom:calc(100% + 2px); }
 #qs-window .qs-lv-later.down { top:calc(100% + 1px); }
 #qs-window .qs-lv-later.side { top:calc(100% + 2px); display:block; }
 #qs-window .qs-lv-later.side.l { transform:translateX(calc(-100% - 3px)); }
-#qs-window .qs-lv-later.side.r { transform:translateX(3px); }
+#qs-window .qs-lv-later.side.r { transform:translateX(2px); }
 #qs-window .qs-lv-laterline { position:absolute; top:0; height:9px; width:2px; margin-left:-1px; background:rgba(251,191,36,.33); pointer-events:auto; cursor:help; }
 #qs-window .qs-lv-uplbl.below { top:11px; }
 #qs-window .qs-lv-seg > b.qs-lv-up { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#fbbf24; cursor:help; }
