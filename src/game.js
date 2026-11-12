@@ -50,6 +50,26 @@ export const MEDAL_TIER = Object.fromEntries([
   }).flatMap(([tier, ids]) => ids.split(' ').map(id => [id, tier])),
 ]);
 export const API_URL = 'https://api.oss.idle.rhythmgamers.net';
+let catalogNames = null;
+/** Every map's name by its id ("Artist - Title [Version]"), from the game's beatmap catalog. Loaded once. */
+export async function mapNames() {
+  if (catalogNames) return catalogNames;
+  const out = {};
+  try {
+    const res = await fetch(`${API_URL}/v1/beatmap/catalog`);
+    if (res.ok) {
+      const walk = (v) => {
+        if (!v || typeof v !== 'object') return;
+        if (Array.isArray(v)) { v.forEach(walk); return; }
+        if (Array.isArray(v.versions) && v.title) for (const d of v.versions) if (d && d.id) out[d.id] = `${v.artist ? `${v.artist} - ` : ''}${v.title}${d.version ? ` [${d.version}]` : ''}`;
+        for (const k in v) if (k !== 'versions') walk(v[k]);
+      };
+      walk(await res.json());
+      catalogNames = out;
+    } else logProblem('catalog', `server answered ${res.status}`);
+  } catch (e) { logProblem('catalog', e); }
+  return out;
+}
 export let medalsKept = null;
 /** Diagnostics: the add-on's last 20 problems this session (failed calls, retries, servers that didn't answer). */
 export const diagLog = [];

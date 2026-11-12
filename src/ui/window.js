@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { cached, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
-import { MINDBLOCK, SKILLS, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
+import { MINDBLOCK, SKILLS, mapNames, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
@@ -1438,7 +1438,7 @@ export const mount = (meta, host) => {
       <div class="qs-card" style="margin-bottom:10px;">
         <div class="qs-row" style="margin-bottom:6px;"><div class="qs-h" style="margin:0;">Diagnostics</div>
           <span class="qs-dim">Something looks wrong? Copy this and send it to Rai.</span>
-          <button type="button" class="qs-plain qs-diag-copy" style="margin-left:auto;" title="Diagnostics, the forecast plays and your recent real plays, in one">Copy for Rai</button>
+          <button type="button" class="qs-plain qs-diag-copy" style="margin-left:auto;" title="Diagnostics, the forecast plays and your recent real plays, in one">Copy Diagnostics</button>
           <button type="button" class="qs-plain qs-diag-console">Open in console</button></div>
         <div class="qs-diag">${diag.health.map(([k, state, v]) => `<span title="${esc(v)}"><i style="background:${DOT[state]}"></i><b>${k}</b> ${esc(v)}</span>`).join('')}</div>
       </div>`;
@@ -1522,8 +1522,11 @@ export const mount = (meta, host) => {
     const limitBox = outEl.querySelector('.qs-debug-limit');
     if (limitBox) limitBox.onchange = () => { debugLimit = Number(limitBox.value) || 0; renderResult(...lastResult); };
     const titles = Object.fromEntries(queue.entries.map(e => [e.beatmapId, e.title]));
+    // maps outside the queue: their names from the game's catalog
+
     /** The character's last 100 plays as the game stored them, newest first. */
     const loadPlayed = async () => {
+      for (const [id, t] of Object.entries(await mapNames())) if (!titles[id]) titles[id] = t;
       let rows = [];
       let note = '';
       try {
@@ -1569,7 +1572,7 @@ ${debugText()}
 ${recent.note ? `${recent.note}
 ` : ''}${tsv(recent.played)}`;
         diagCopy.textContent = (await copyText(text)) ? 'Copied' : 'Copy failed';
-        setTimeout(() => { if (diagCopy.isConnected) diagCopy.textContent = 'Copy for Rai'; }, 1500);
+        setTimeout(() => { if (diagCopy.isConnected) diagCopy.textContent = 'Copy Diagnostics'; }, 1500);
       };
     }
     const diagConsole = outEl.querySelector('.qs-diag-console');
