@@ -116,7 +116,7 @@ export const barHtml = (bar, ahead) => {
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
     ${ahead && ahead.samples.length > 1 ? '<div class="qs-at"></div>' : ''}
   </div>
-  ${ahead && ahead.samples.length > 1 ? `<div class="qs-slide"><span class="qs-dim">now</span><input type="range" class="qs-slide-in" min="0" max="${Math.round(ahead.hours * 3600)}" step="900"><span class="qs-dim">${ahead.hours}<small class="qs-u">h</small></span><span class="qs-slide-text"></span></div>` : ''}`;
+  ${ahead && ahead.samples.length > 1 ? `<div class="qs-slide"><span class="qs-dim">now</span><input type="range" class="qs-slide-in" min="0" max="${Math.round(ahead.hours * 3600)}" step="${ahead.hours > 12 ? 3600 : 1800}"><span class="qs-dim">${ahead.hours}<small class="qs-u">h</small></span><span class="qs-slide-text"></span></div>` : ''}`;
 };
 
 /** Where the forecast is at `t` seconds from now: the bar and the minutes of strain, between the two samples around it. */
