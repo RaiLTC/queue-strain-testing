@@ -1192,7 +1192,7 @@ export const mount = (meta, host) => {
           if (next && here.includes(next)) {
             const f = (next.level - a2) / (b2 - a2);
             above = k === 0 && f < 0.05;
-            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${k === n - 1 && f > 0.9 ? ' transform:translateX(calc(-100% - 4px));' : ''}" title="${esc(upgradeText(next))}">#${next.k} ${upgradeSoon(next)}</span>`;
+            upLabels = `<span class="qs-lv-uplbl ${above ? 'above' : 'below'}" style="left:${(f * 100).toFixed(2)}%;${k === n - 1 && f > 0.9 ? ' transform:translateX(calc(-100% - 4px));' : ''}" title="${esc(upgradeText(next))}"><span class="k">#${next.k}</span> ${upgradeSoon(next)}</span>`;
           }
           const label = `${b2}${at !== undefined ? ` · ${durH(at)}` : ''}`;
           // a piece this queue completes within the look-ahead: its progress shifts to white (pink when it's the prestige)
@@ -1490,6 +1490,8 @@ export const mount = (meta, host) => {
 
     // the next upgrade's label under a bar: when it would cover one of the bar's level marks (the 100 at its start,
     // say), it moves above the bar instead
+    // the next upgrade's label: its number centred on its line, the time running on to the right
+    for (const lbl of outEl.querySelectorAll('.qs-lv-uplbl')) { const k = lbl.querySelector('.k'); if (k && !lbl.style.transform) lbl.style.marginLeft = `-${(k.getBoundingClientRect().width / 2).toFixed(1)}px`; }
     for (const lbl of outEl.querySelectorAll('.qs-lv-uplbl.below')) {
       const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
       const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
