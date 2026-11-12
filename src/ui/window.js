@@ -592,21 +592,21 @@ export const mount = (meta, host) => {
     const nowStage = stageOf(now.bar);
     if (nowStage === 'cold' || nowStage === 'warming') {
       const t = when(b => b >= BAR_ZONES[0]);
-      outlook.push(['Sweet Spot', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${aheadText}: the queue is too light`]);
+      outlook.push(['Sweet Spot', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${aheadText}`]);
     }
     const reach = r.samples.findIndex(s => inPeak(s.bar));
     if (reach >= 0) {
       const leave = r.samples.findIndex((s, i) => i > reach && !inPeak(s.bar));
       outlook.push(['Leaves Sweet Spot', leave >= 0
-        ? `in <b>${durWords(r.samples[leave].t)}</b>, ${r.samples[leave].bar >= BAR_ZONES[1] ? 'pushed past it: play easier maps' : 'cooled below it: play harder maps'}`
-        : `<b>never</b> in ${aheadText}: this queue holds you there`]);
+        ? `<span title="${r.samples[leave].bar >= BAR_ZONES[1] ? 'Pushed past it: easier maps keep you there longer' : 'Cools below it: harder maps keep you there longer'}">in <b>${durWords(r.samples[leave].t)}</b></span>`
+        : `<b>never</b> in ${aheadText}`]);
     }
     const fat = when(b => b >= XP_CUT);
     outlook.push(['<span style="color:#f87171">XP cut</span>', now.minutes >= now.knots[3]
-      ? '<b style="color:#f87171">already</b>: past 300 minutes of strain'
+      ? '<b style="color:#f87171">already</b>'
       : fat !== undefined
-        ? `<b style="color:#f87171">in ${durWords(fat)}</b>, when strain passes 300 minutes`
-        : `<b>never</b> in ${aheadText}: strain stays under 300 minutes`]);
+        ? `<b style="color:#f87171">in ${durWords(fat)}</b>`
+        : `<b>never</b> in ${aheadText}`]);
     if (r.loopSec) {
       const drift = r.loopDrift;
       outlook.push(['One Loop', `${r.loopPlays} play${r.loopPlays === 1 ? '' : 's'} in ${durWords(r.loopSec)}, ${Math.abs(drift) < 0.5 ? 'strain about even' : `${drift > 0 ? '+' : ''}${drift.toFixed(1)} minutes of strain`} each loop`]);
