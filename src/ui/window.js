@@ -1384,6 +1384,22 @@ export const mount = (meta, host) => {
         </div>`;
     };
 
+    // ---- Suggestions: what if a map went, or got one more repeat? Each change forecast again from the stored
+    // simulator answers (the quick update's way, no new calls for maps already seen) and ranked by XP an hour ----
+    const sg = r.suggest;
+    const sgRows = sg && sg.base > 0 ? [...sg.rows].sort((a, b) => b.xp - a.xp) : [];
+    const sgTable = sgRows.length ? `<div class="qs-tablewrap" style="margin-top:8px;"><table>
+        <thead><tr><th>Change</th><th class="n">XP/h</th><th class="n">vs now</th></tr></thead><tbody>
+        <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.base)}</td><td class="n qs-dim">–</td></tr>
+        ${sgRows.map(v => { const d = v.xp / sg.base - 1, good = d > 0.005; return `<tr${good ? '' : ' class="qs-dim"'}><td class="qs-map" title="${esc(v.title)}">${v.kind === 'remove' ? 'Remove' : `+1 repeat (${v.from} → ${v.from + 1})`} · ${esc(v.title)}</td><td class="n">${fmt(v.xp)}</td><td class="n"${good ? ' style="color:#4ade80; font-weight:600;"' : d < -0.005 ? ' style="color:#f87171;"' : ''}>${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</td></tr>`; }).join('')}
+      </tbody></table></div>` : '';
+    const suggestTab = `<div class="qs-card">
+        <div class="qs-h">Suggestions</div>
+        <div class="qs-dim" style="margin-bottom:6px;">Tries your queue without each map, and with one more repeat of each, and shows which changes give more XP an hour over the next ${aheadText}. Estimates: apply one and rescan for the exact numbers.</div>
+        ${sg && sg.running ? `<div>Checking ${sg.done} of ${sg.of}…</div>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
+        ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
+        ${sgTable}
+      </div>`;
     // ---- Diagnostics: a health line per input, and everything as text to paste (no character id or name) ----
     const diag = (() => {
       const st = r.simStats || { ms: 0, slowest: 0, busy: 0, failed: 0 };
@@ -1483,7 +1499,7 @@ export const mount = (meta, host) => {
     // ---- the tabs ----
     const available = TABS.filter(([id]) => (id === 'xp' || id === 'levels' ? hasXp : id === 'sv' ? !!svTab : true));
     if (!available.some(([id]) => id === activeTab)) activeTab = 'overview';
-    const content = { overview, xp: xpTab, sv: svTab, levels: levelsTab, debug: debugTab }[activeTab];
+    const content = { overview, xp: xpTab, sv: svTab, levels: levelsTab, suggest: suggestTab, debug: debugTab }[activeTab];
     outEl.innerHTML = `
       <div class="qs-tabs">${available.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === activeTab ? 'on' : ''}">${label}</button>`).join('')}</div>
       ${content}`;
@@ -1587,6 +1603,32 @@ export const mount = (meta, host) => {
         void openConsole({ loadPlayed, calibRows, calibSummary, diag });
       };
     }
+    const sgBtn = outEl.querySelector('.qs-suggest-run');
+    if (sgBtn) sgBtn.onclick = async () => {
+      const tok = scanToken;
+      const variants = [];
+      queue.entries.forEach((e, i) => {
+        if (queue.entries.length > 1) variants.push({ kind: 'remove', title: e.title, entries: queue.entries.filter((_, j) => j !== i) });
+        variants.push({ kind: 'repeat', title: e.title, from: e.repeat, entries: queue.entries.map((x, j) => (j === i ? { ...x, repeat: x.repeat + 1 } : x)) });
+      });
+      r.suggest = { running: true, done: 0, of: variants.length + 1, rows: [] };
+      renderResult(...lastResult);
+      const perHour = (res) => res.plays.reduce((t, p) => t + totalOf(p), 0) / Math.max(1, ctx.hours);
+      const quickCtx = { ...ctx, quick: true };
+      try {
+        r.suggest.base = perHour(await forecast(queue, quickCtx, () => {}, tok));
+        r.suggest.done = 1;
+        for (const v of variants) {
+          if (tok !== scanToken || lastResult[3] !== r) return;
+          const res = await forecast({ ...queue, entries: v.entries }, quickCtx, () => {}, tok);
+          r.suggest.rows.push({ kind: v.kind, title: v.title, from: v.from, xp: perHour(res) });
+          r.suggest.done++;
+          if (activeTab === 'suggest') renderResult(...lastResult);
+        }
+      } catch (e) { r.suggest.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
+      r.suggest.running = false;
+      if (lastResult[3] === r) renderResult(...lastResult);
+    };
     const diagCopy = outEl.querySelector('.qs-diag-copy');
     if (diagCopy) {
       diagCopy.onclick = async () => {

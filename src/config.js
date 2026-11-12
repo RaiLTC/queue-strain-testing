@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.533';
-export const VERSION_ID = '2026-11-12 19H31M';
+export const VERSION = '1.3.534';
+export const VERSION_ID = '2026-11-12 19H45M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -41,6 +41,7 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
+• New Suggestions tab: which maps to drop or repeat for more XP
 • Levels: follow your routes from Gemini's level up sim
 • Levels: Overall display, next upgrades on the bar
 • Levels update by themselves after an upgrade
@@ -116,7 +117,7 @@ export const SETTINGS = {
 // TEXT: words players see. {name} is filled in by the add-on.
 // ---------------------------------------------------------------------
 export const TEXT = {
-  tabs: { overview: 'Overview', xp: 'XP', sv: 'Speed Jam / Memory', levels: 'Levels', debug: 'Debug' },
+  tabs: { overview: 'Overview', xp: 'XP', sv: 'Speed Jam / Memory', levels: 'Levels', suggest: 'Suggestions', debug: 'Debug' },
   stages: {
     cold: ['Cold', 'Play harder maps to warm up.'],
     warming: ['Warming Up', 'Play harder maps to reach the sweet spot.'],
