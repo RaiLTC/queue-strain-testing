@@ -1,7 +1,7 @@
 // Formatting and the small pieces of the window: bars, graphs, the notice and changelog buttons.
 
 import { CHANGELOG, NOTICE, TEXT } from '../config.js';
-import { BAR_ZONES, XP_CUT } from '../rules/fatigue.js';
+import { BAR_ZONES, XP_CUT, fatigueLevel, fatigueXp } from '../rules/fatigue.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 /** A play's start, as a table column: 1:05. */
@@ -46,6 +46,11 @@ export const arrows = (trend) => (trend > 0 ? `<span style="color:#f0883e">${'�
 /** A zone's colour on the bar: white below the sweet spot, yellow in it, orange past it, red past the XP cut. */
 const zoneColor = (b) => (b < BAR_ZONES[0] ? '#e5e7eb' : b < BAR_ZONES[1] ? '#facc15' : b < XP_CUT ? '#fb923c' : '#f87171');
 
+/** How much of the physical skills' XP the strain cut leaves at this many minutes of strain, and its colour:
+ *  white while none is lost, then yellow, orange and red as more is. */
+const xpKept = (minutes) => fatigueXp(fatigueLevel(minutes));
+const keptColor = (k) => (k >= 0.995 ? '#fff' : k >= 0.7 ? '#facc15' : k >= 0.3 ? '#fb923c' : '#ef4444');
+
 /** The warm-up bar, as the game draws it: zones and where it is now. Over it, where the forecast takes it:
  *  a faint band over the range it moves through, and an arrow from now to where it ends, coloured by the zones it crosses. */
 export const barHtml = (bar, ahead) => {
@@ -78,12 +83,15 @@ export const barHtml = (bar, ahead) => {
       for (let h = step; h < ahead.hours; h += step) {
         const s = ahead.samples.find(x => x.t >= h * 3600);
         if (!s) break;
-        const x = s.bar * 100;
-        if (!hitsCut(x) && placed.every(p => Math.abs(p - x) >= 4)) {
-          placed.push(x);
-          future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%">${h}<small class="qs-u">h</small></div>`;
+        const x = s.bar * 100, kept = xpKept(s.minutes), color = keptColor(kept);
+        const tip = `After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%${kept < 0.995 ? ` · physical XP kept ×${kept.toFixed(2)}` : ''}`;
+        if (!hitsCut(x) && placed.every(p => Math.abs(p.x - x) >= (p.wide && kept < 0.995 ? 7 : 4))) {
+          placed.push({ x, wide: kept < 0.995 }); // a label with its XP lost under it needs more room
+          future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">${h}<small class="qs-u">h</small></div>`;
+          // past the cut, how much physical XP is lost there, under the arrow
+          if (kept < 0.995) future += `<div class="qs-loss-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">-${Math.round((1 - kept) * 100)}%</div>`;
         }
-        marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".85"><title>After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%</title></line>`;
+        marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".9"><title>${tip}</title></line>`;
       }
       future += `<svg class="qs-arrow" viewBox="0 0 100 10" preserveAspectRatio="none"><title>After ${hours}: ${Math.round(e)}%</title><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.toFixed(2)}" x2="${e.toFixed(2)}" y1="0" y2="0">${stops.join('')}</linearGradient></defs><line x1="${a.toFixed(2)}" x2="${(e - dir * 1.2).toFixed(2)}" y1="5" y2="5" stroke="url(#${id})" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path d="M${e.toFixed(2)} 5 L${(e - dir * 1.4).toFixed(2)} 1.8 L${(e - dir * 1.4).toFixed(2)} 8.2 Z" fill="${zoneColor(end)}"/>${marks}</svg>`;
     }
@@ -92,7 +100,7 @@ export const barHtml = (bar, ahead) => {
     future += `<div class="qs-arrow-label" style="left:${e.toFixed(2)}%" title="After ${hours}: ${Math.round(e)}%">${Math.abs(e - a) < 1 ? 'steady' : 'in'} ${ahead.hours}<small class="qs-u">h</small></div>`;
   }
   return `
-  <div class="qs-bar">
+  <div class="qs-bar${cutText === 'none' ? ' lossy' : ''}">
     <div class="qs-track"></div>
     ${future}
     <div class="qs-tick" style="left:${BAR_ZONES[0] * 100}%"></div>
