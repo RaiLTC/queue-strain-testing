@@ -111,11 +111,21 @@ export const mount = (meta, host) => {
     if (saved.windowGroupOpen) winGroup.open = true;
   } catch (_) {}
   let mouseIn = true;
-  /** See-through while the mouse is away (when that's on), solid otherwise. */
+  /** Where the mouse last was anywhere on the page, so opening the window under it counts as the mouse being in. */
+  let mouseX = -1, mouseY = -1; // kept by moveListener
+  /** See-through while the mouse is away (when that's on), solid otherwise; never before the first scan's results,
+   *  while the window is still the small "scan to start" one. */
   const applyFade = () => {
     fadeVal.textContent = `${fadeAmt.value}%`;
     fadeAmt.disabled = !fadeBox.checked;
-    root.style.opacity = fadeBox.checked && !mouseIn ? String(1 - Number(fadeAmt.value) / 100) : '';
+    const fade = fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh');
+    root.style.opacity = fade ? String(1 - Number(fadeAmt.value) / 100) : '';
+  };
+  /** Whether the mouse is over the window right now: by the hover state, or by where it last moved. */
+  const checkMouse = () => {
+    const r = root.getBoundingClientRect();
+    mouseIn = root.matches(':hover') || (mouseX >= r.left && mouseX <= r.right && mouseY >= r.top && mouseY <= r.bottom);
+    applyFade();
   };
   root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
   root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
@@ -300,7 +310,7 @@ export const mount = (meta, host) => {
       beforeEdit = null;
     }
   };
-  const show = () => { root.style.display = 'flex'; startQueueWatch(); fitAroundQueue(); };
+  const show = () => { root.style.display = 'flex'; startQueueWatch(); fitAroundQueue(); checkMouse(); };
   /** Whether a scan is running: the button reads Stop while it is. */
   let scanning = false;
   const setScanning = (on) => {
@@ -387,7 +397,8 @@ export const mount = (meta, host) => {
 
   // while editing the queue with its mods menu (.mod-select) up, clicks go through the window to the game, if that's
   // on; checked as the mouse moves, so it follows the menu opening and closing right away
-  moveListener = () => {
+  moveListener = (e) => {
+    mouseX = e.clientX; mouseY = e.clientY;
     if (!shown()) return;
     const pass = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
     root.style.pointerEvents = pass ? 'none' : '';
@@ -499,6 +510,8 @@ export const mount = (meta, host) => {
       root.classList.remove('qs-fresh');
       nowEl.classList.remove('qs-busy');
       if (firstResult) center(); else centerVertically();
+      // the window grew and may have moved: fade or not by where the mouse is now
+      checkMouse();
       setStatus(countsLine({ plays: result.plays.length, ...result.counts() }, result.plays.filter(p => p.approx).length), TEXT.status.countsTip);
     } catch (e) {
       saveCache();
