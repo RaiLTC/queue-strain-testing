@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.527';
-export const VERSION_ID = '2026-11-12 19H12M';
+export const VERSION = '1.3.528';
+export const VERSION_ID = '2026-11-12 19H17M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -41,9 +41,21 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
-• Levels: the two upgrades after the next one show faintly on the bar
-• Far ones sit under the bar, ones near the next upgrade above it
-• Upgrades close together share one marker`,
+• Levels: follow your routes from Gemini's level up sim
+• Levels: Overall display, next upgrades on the bar
+• Levels update by themselves after an upgrade
+• Overview: the top 3 skills this queue trains
+• Strain bar: slider starts off, tidier arrow and labels
+• Hour marks on the strain arrow now sit in the right place
+• Hotfixes now have their own button
+• Window stays solid while you edit the queue next to it
+• Clicks pass through to the mods menu, options and Add-ons
+• Chat shows through the window when you point at it, and scrolls
+• Esc closes an open menu or the chat first
+• Debug: Copy Diagnostics, map names in the console
+• Fixed Speed Jam / Memory strain, the Tries count and a stuck console
+• Fixed the window fading when opened under the mouse
+• Fixed the window moving when opening its options`,
 };
 
 // ---------------------------------------------------------------------

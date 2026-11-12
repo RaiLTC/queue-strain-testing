@@ -1511,6 +1511,12 @@ export const mount = (meta, host) => {
 
     // the next upgrade's label under a bar: when it would cover one of the bar's level marks (the 100 at its start,
     // say), it moves above the bar instead
+    // the faint later upgrades under a bar: one that would cover a level mark moves above the bar
+    for (const lbl of outEl.querySelectorAll('.qs-lv-later.down, .qs-lv-later.side')) {
+      const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
+      const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
+      if (hits) { lbl.classList.remove('down', 'side', 'l', 'r'); lbl.classList.add('up'); lbl.innerHTML = lbl.textContent.replace('▲', '') + '<i>▼</i>'; bar.classList.add('ups'); }
+    }
     for (const lbl of outEl.querySelectorAll('.qs-lv-uplbl.below')) {
       const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
       const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
