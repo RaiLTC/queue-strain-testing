@@ -369,8 +369,8 @@ export const mount = (meta, host) => {
       e.preventDefault();
       e.stopPropagation();
       if (shown()) hide(); else show();
-    } else if (e.key === 'Escape' && shown() && document.querySelector('.options__container.open')) {
-      // the game's options menu is open: this Esc is for it, the window stays
+    } else if (e.key === 'Escape' && shown() && document.querySelector('.options__container.open, .community-chat-container.is-enabled')) {
+      // the game's options menu or chat is open: this Esc is for it, the window stays (the next Esc closes it)
       return;
     } else if (e.key === 'Escape' && shown()) {
       // while editing the queue, "close both" lets this Esc go on to the game, which closes Edit Queue
