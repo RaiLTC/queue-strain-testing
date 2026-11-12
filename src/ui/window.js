@@ -931,6 +931,22 @@ export const mount = (meta, host) => {
         if (!isFinite(x.readySec)) return '<span class="qs-faint">–</span>';
         return x.readyAt !== undefined ? `<span class="qs-ready">in ${dur(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${longDur(x.readySec)}</span>`;
       };
+      /** The overall rebirth time in words: "in 3 days and 4 hours", "in 1 year, 2 months, 5 days and 1 minute".
+       *  Units that are zero are left out; a month is 30 days, a year 365. */
+      const wordsDur = (sec) => {
+        let m = Math.max(1, Math.round(sec / 60));
+        const parts = [];
+        for (const [name, size] of [['year', 525600], ['month', 43200], ['day', 1440], ['hour', 60], ['minute', 1]]) {
+          const n = Math.floor(m / size);
+          m -= n * size;
+          if (n) parts.push(`${n} ${name}${n === 1 ? '' : 's'}`);
+        }
+        return `in ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]}`;
+      };
+      const overallText = (x) => {
+        if (x.readyAt === 0 || !isFinite(x.readySec)) return prestigeText(x);
+        return x.readyAt !== undefined ? `<span class="qs-ready">${wordsDur(x.readySec)}</span>` : `<span title="${esc(TEXT.levels.keepPlaying)}">${wordsDur(x.readySec)}</span>`;
+      };
       const shareOf = (x) => (totalPerH > 0 ? Math.round(x.perH / totalPerH * 100) : 0);
       const detailRow = (x) => {
         const ranked = [...x.byMap.entries()].filter(([, v]) => v > 0).sort((a2, b2) => b2[1] - a2[1]);
@@ -961,7 +977,7 @@ export const mount = (meta, host) => {
       };
       // the overall level sits on its own above the skills: one line, then its bar. It doesn't open.
       const overallHtml = overallRow ? `<div class="qs-lv-ov">
-          <div class="qs-lv-ovline"><b>${TEXT.levels.overall} Lv ${overallRow.start.toFixed(2)}</b><span class="qs-faint">·</span><span><b>${overallRow.perH > 0 ? fmt(overallRow.perH) : '–'}</b> <span class="qs-dim">${TEXT.levels.xph}</span></span><span class="qs-faint">·</span><span title="${tx(TEXT.levels.rebirthAt, { n: overallRow.need })}${overallRow.toPrestige ? `: ${tx(TEXT.levels.xpToGo, { xp: fmt(overallRow.toPrestige) })}` : ''}"><span class="qs-dim">${TEXT.levels.rebirth}</span> ${prestigeText(overallRow)}</span></div>
+          <div class="qs-lv-ovline"><b>${TEXT.levels.overall} Lv ${overallRow.start.toFixed(2)}</b><span class="qs-faint">·</span><span><b>${overallRow.perH > 0 ? fmt(overallRow.perH) : '–'}</b> <span class="qs-dim">${TEXT.levels.xph}</span></span><span class="qs-faint">·</span><span title="${tx(TEXT.levels.rebirthAt, { n: overallRow.need })}${overallRow.toPrestige ? `: ${tx(TEXT.levels.xpToGo, { xp: fmt(overallRow.toPrestige) })}` : ''}"><span class="qs-dim">${TEXT.levels.rebirth}</span> ${overallText(overallRow)}</span></div>
           ${levelsBar(overallRow)}
         </div>` : '';
       const rowsHtml = skillRows.map((x) => {
