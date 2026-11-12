@@ -182,7 +182,6 @@ export const CSS = `
 #qs-window .qs-band { position:absolute; top:7px; height:12px; border-radius:6px; background:rgba(255,255,255,.12); }
 #qs-window .qs-arrow { position:absolute; left:0; top:-11px; width:100%; height:10px; overflow:visible; filter:drop-shadow(0 0 1px rgba(0,0,0,.9)); }
 #qs-window .qs-endline { position:absolute; top:-6px; height:32px; width:0; margin-left:-0.5px; border-left:1px dashed rgba(255,255,255,.45); pointer-events:none; }
-#qs-window .qs-cut-label.side { transform:translateX(4px); }
 /* when the arrow reaches the XP cut it moves up, to make room under it for the XP lost at each hour */
 #qs-window .qs-bar.lossy { margin-top:42px; }
 #qs-window .qs-bar.lossy .qs-arrow { top:-23px; }

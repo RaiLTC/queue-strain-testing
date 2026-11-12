@@ -55,8 +55,8 @@ const keptColor = (k) => (k >= 0.995 ? '#fff' : k >= 0.7 ? '#facc15' : k >= 0.3 
  *  a faint band over the range it moves through, and an arrow from now to where it ends, coloured by the zones it crosses. */
 export const barHtml = (bar, ahead) => {
   let future = '';
-  // the XP cut's text: centred on its line; beside it (to the right) when the arrow ends just short of it; gone when the arrow reaches it
-  let cutText = 'center';
+  // the XP cut's text, centred on its line; left out when the arrow comes close to it or past it (the red line says enough)
+  let cutText = 'center', pastCut = false;
   if (ahead && ahead.samples.length > 1) {
     const later = ahead.samples.slice(1).map(s => s.bar);
     const lo = Math.min(...later), hi = Math.max(...later);
@@ -65,9 +65,9 @@ export const barHtml = (bar, ahead) => {
     future += `<div class="qs-band" style="left:${(lo * 100).toFixed(2)}%; width:${Math.max(0.6, (hi - lo) * 100).toFixed(2)}%" title="Where it moves in the next ${hours}: ${Math.round(lo * 100)}% to ${Math.round(hi * 100)}%"></div>`;
     const a = bar * 100, e = end * 100, dir = e >= a ? 1 : -1;
     const cut = XP_CUT * 100, reach = Math.max(a, e);
-    if (Math.abs(e - a) >= 1) cutText = reach >= cut ? 'none' : reach >= cut - 12 ? 'side' : 'center';
+    if (Math.abs(e - a) >= 1) { cutText = reach >= cut - 12 ? 'none' : 'center'; pastCut = reach >= cut; }
     /** Whether an hour label at x would run into the XP cut's text. */
-    const hitsCut = (x) => (cutText === 'center' ? Math.abs(x - cut) < 9 : cutText === 'side' ? x > cut - 3 && x < cut + 16 : false);
+    const hitsCut = (x) => cutText === 'center' && Math.abs(x - cut) < 9;
     if (Math.abs(e - a) >= 1) {
       // the line's colour follows the zones it passes through
       const stops = [];
@@ -106,13 +106,13 @@ export const barHtml = (bar, ahead) => {
     future += `<div class="qs-arrow-label" style="left:${e.toFixed(2)}%" title="After ${hours}: ${Math.round(e)}%">${Math.abs(e - a) < 1 ? 'steady' : 'in'} ${ahead.hours}<small class="qs-u">h</small></div>`;
   }
   return `
-  <div class="qs-bar${cutText === 'none' ? ' lossy' : ''}">
+  <div class="qs-bar${pastCut ? ' lossy' : ''}">
     <div class="qs-track"></div>
     ${future}
     <div class="qs-tick" style="left:${BAR_ZONES[0] * 100}%"></div>
     <div class="qs-tick" style="left:${BAR_ZONES[1] * 100}%"></div>
     <div class="qs-cut" style="left:${XP_CUT * 100}%" title="300 min of strain: XP gains start being cut"></div>
-    ${cutText === 'none' ? '' : `<div class="qs-cut-label${cutText === 'side' ? ' side' : ''}" style="left:${XP_CUT * 100}%">300 min · XP cut</div>`}
+    ${cutText === 'none' ? '' : `<div class="qs-cut-label" style="left:${XP_CUT * 100}%">300 min · XP cut</div>`}
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
     ${ahead && ahead.samples.length > 1 ? '<div class="qs-at"></div>' : ''}
   </div>
