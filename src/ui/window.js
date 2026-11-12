@@ -128,7 +128,7 @@ export const mount = (meta, host) => {
   fadeAmt.addEventListener('input', applyFade);
   fadeAmt.addEventListener('change', savePrefs);
   outsideSel.addEventListener('change', savePrefs);
-  winGroup.addEventListener('toggle', () => { savePrefs(); centerVertically(); });
+  winGroup.addEventListener('toggle', savePrefs);
   applyFade();
   // look-ahead: whole hours from 1 to 24, digits only (no dot, comma, minus or exponent)
   hoursInput.addEventListener('keydown', (ev) => { if (['.', ',', '-', '+', 'e', 'E'].includes(ev.key)) ev.preventDefault(); });
