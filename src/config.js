@@ -82,7 +82,7 @@ export const TEXT = {
     hours: 'hours',
     startAt: 'Start at',
     startAtTip: 'Leave empty to start from where your character is now',
-    minOfStrain: 'min of strain',
+    minOfStrain: 'minutes of strain',
     runs: 'Runs per play',
     runsTip: 'A play is random, so each one can be simulated a few times and averaged, as the official sim does. More runs: steadier numbers, but more simulator calls on the first scan (later scans reuse them).',
     animations: 'Animations',

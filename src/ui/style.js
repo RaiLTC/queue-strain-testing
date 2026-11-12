@@ -28,6 +28,9 @@ export const CSS = `
 #qs-window .qs-sub { display:block; font-size:10.5px; color:#9ca3af; font-weight:400; }
 #qs-window .qs-faint { color:#6b7280; }
 #qs-window .qs-ready { color:#4ade80; font-weight:600; }
+#qs-window small.qs-u { font-size:.8em; color:#9ca3af; font-weight:400; margin-left:1px; }
+#qs-window .qs-num.hot { color:var(--qs-prestige); font-weight:600; }
+#qs-window .qs-ready .qs-num.hot { color:inherit; }
 /* the levels bar: a piece per pair of marks, the end mark (and when you reach it) under each */
 #qs-window .qs-lv-bar { position:relative; display:flex; gap:3px; padding-top:3px; min-width:0; }
 #qs-window .qs-lv-cell { flex:1; min-width:0; display:flex; flex-direction:column; }

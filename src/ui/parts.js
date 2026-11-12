@@ -6,13 +6,29 @@ import { BAR_ZONES, XP_CUT } from '../rules/fatigue.js';
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 /** A play's start, as a table column: 1:05. */
 export const clock = (sec) => `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
-/** A stretch of time: 8H 05M, 44M under an hour, <1M under a minute. */
+/** A stretch of time as plain text, for copies and hover tips: 8h 05m, 44m under an hour, <1m under a minute. */
 export const dur = (sec) => {
-  if (!(sec >= 60)) return '<1M';
+  if (!(sec >= 60)) return '<1m';
   const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60;
-  return h ? `${h}H ${String(m).padStart(2, '0')}M` : `${m}M`;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 };
-export const minText = (m) => (m < 1 ? `${Math.round(m * 60)} s` : `${m < 10 ? m.toFixed(1) : Math.round(m)} min`);
+/** Short time text for the window: the numbers stand out, the unit letters are small and dim.
+ *  `hot` colours the numbers too (the Levels panel). */
+export const unitsHtml = (text, hot) => esc(text).replace(/(\d+)([a-z]+)/g, `<span class="qs-num${hot ? ' hot' : ''}">$1</span><small class="qs-u">$2</small>`);
+export const durH = (sec, hot) => unitsHtml(dur(sec), hot);
+/** A stretch of time in words: "1 hour and 30 minutes", "1 year, 2 months, 5 days and 1 minute".
+ *  Units that are zero are left out; a month is 30 days, a year 365. With `html`, the numbers are marked (`hot` colours them). */
+export const durWords = (sec, html, hot) => {
+  let m = Math.max(1, Math.round(sec / 60));
+  const parts = [];
+  for (const [name, size] of [['year', 525600], ['month', 43200], ['day', 1440], ['hour', 60], ['minute', 1]]) {
+    const n = Math.floor(m / size);
+    m -= n * size;
+    if (n) parts.push(`${html ? `<span class="qs-num${hot ? ' hot' : ''}">${n}</span>` : n} ${name}${n === 1 ? '' : 's'}`);
+  }
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+};
+export const minText = (m) => { const s = Math.round(m * 60), v = m < 10 ? m.toFixed(1) : String(Math.round(m)); return m < 1 ? `${s} second${s === 1 ? '' : 's'}` : `${v} minute${v === '1.0' || v === '1' ? '' : 's'}`; };
 /** Minutes, short: 1s, 1.4m, 1.2h. */
 export const shortTime = (m) => {
   const sec = m * 60;
