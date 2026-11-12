@@ -391,6 +391,8 @@ export const mount = (meta, host) => {
     if (!shown() || !(e.target instanceof Element) || editQueueOpen()) return;
     if (root.contains(e.target) || (consoleEl && consoleEl.contains(e.target))) return;
     if (opensEditQueue(e.target)) { setTimeout(fitAroundQueue, 150); return; }
+    // clicks meant to go through the window (a menu open under it) or into the open chat are the game's: leave them be
+    if (passSeeThrough || e.target.closest('.options__container.open, .community-chat-container.is-enabled')) return;
     if (outsideSel.value === 'stay') return;
     if (outsideSel.value === 'close') {
       // the game doesn't get this click: stop it, and the release and click that follow it
