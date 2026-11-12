@@ -61,6 +61,8 @@ export const mount = (meta, host) => {
               <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;"><span class="qs-dim" title="${esc(TEXT.options.escEditingTip)}">${TEXT.options.escEditing}</span>
               <select id="qs-esc-edit" style="width:auto;" title="${esc(TEXT.options.escEditingTip)}"><option value="addon">${TEXT.options.escAddon}</option><option value="both">${TEXT.options.escBoth}</option></select></span>
               <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.modsPassTip)}"><input id="qs-modspass" type="checkbox" style="margin:0;"> ${TEXT.options.modsPass}</label>
+              <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.optionsPassTip)}"><input id="qs-optspass" type="checkbox" style="margin:0;"> ${TEXT.options.optionsPass}</label>
+              <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.chatHoleTip)}"><input id="qs-chathole" type="checkbox" style="margin:0;"> ${TEXT.options.chatHole}</label>
             </div>
           </details>
           <div id="qs-status" class="qs-dim" style="margin-top:6px;"></div>
@@ -99,11 +101,13 @@ export const mount = (meta, host) => {
     memTopInput.value = String(memPlays);
   } catch (_) {}
   // the Window group: fade while the mouse is away, and what a click outside does
-  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside'), modsBox = $('#qs-modspass'), escSel = $('#qs-esc-edit');
-  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside; modsBox.checked = SETTINGS.modsPassThrough; escSel.value = SETTINGS.escEditing;
+  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside'), modsBox = $('#qs-modspass'), escSel = $('#qs-esc-edit'), optsBox = $('#qs-optspass'), chatBox = $('#qs-chathole');
+  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside; modsBox.checked = SETTINGS.modsPassThrough; escSel.value = SETTINGS.escEditing; optsBox.checked = SETTINGS.optionsPassThrough; chatBox.checked = SETTINGS.chatHole;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (['addon', 'both'].includes(saved.escEditing)) escSel.value = saved.escEditing;
+    if (saved.optionsPassThrough !== undefined) optsBox.checked = !!saved.optionsPassThrough;
+    if (saved.chatHole !== undefined) chatBox.checked = !!saved.chatHole;
     if (saved.modsPassThrough !== undefined) modsBox.checked = !!saved.modsPassThrough;
     if (saved.fade !== undefined) fadeBox.checked = !!saved.fade;
     if (saved.fadeAmount) fadeAmt.value = String(Math.min(90, Math.max(10, Math.round(saved.fadeAmount / 10) * 10)));
@@ -118,10 +122,13 @@ export const mount = (meta, host) => {
   const applyFade = () => {
     fadeVal.textContent = `${fadeAmt.value}%`;
     fadeAmt.disabled = !fadeBox.checked && !modsBox.checked;
-    // while clicks pass through to the mods menu it is see-through too, whether or not fading is on
-    const fade = root.classList.contains('qs-passing') || (fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh'));
+    // while clicks pass through (mods menu, options menu) it is see-through too, whether or not fading is on
+    if (passSeeThrough) { root.style.opacity = String(1 - passSeeThrough / 100); return; }
+    const fade = fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh');
     root.style.opacity = fade ? String(1 - Number(fadeAmt.value) / 100) : '';
   };
+  /** How see-through the window is while clicks pass through it (in %), or 0 while they don't. */
+  let passSeeThrough = 0;
   /** Whether the mouse is over the window right now: by the hover state, or by where it last moved. */
   const checkMouse = () => {
     const r = root.getBoundingClientRect();
@@ -131,7 +138,7 @@ export const mount = (meta, host) => {
   root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
   root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
   const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, escEditing: escSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, optionsPassThrough: optsBox.checked, chatHole: chatBox.checked, escEditing: escSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
   };
   modsBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   escSel.addEventListener('change', savePrefs);
@@ -204,7 +211,7 @@ export const mount = (meta, host) => {
     return (maps(then) === maps(now) ? SETTINGS.rescanWaitSec.repeats : SETTINGS.rescanWaitSec.maps) * 1000;
   };
   /** The queue is checked every SETTINGS.queueCheckMs, only while the window is open. */
-  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); watchQueue(); }, SETTINGS.queueCheckMs); };
+  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); updateOverlays(); watchQueue(); }, SETTINGS.queueCheckMs); };
   const stopQueueWatch = () => { if (queueTimer) { clearInterval(queueTimer); queueTimer = null; } };
   const watchQueue = () => {
     if (!root || !shown() || !scanKey || autoPaused) return;
@@ -400,12 +407,35 @@ export const mount = (meta, host) => {
   // on; checked as the mouse moves, so it follows the menu opening and closing right away
   moveListener = (e) => {
     mouseX = e.clientX; mouseY = e.clientY;
-    if (!shown()) return;
-    const pass = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
-    root.style.pointerEvents = pass ? 'none' : '';
-    if (root.classList.contains('qs-passing') !== pass) { root.classList.toggle('qs-passing', pass); applyFade(); }
+    updateOverlays();
   };
   window.addEventListener('pointermove', moveListener, true);
+  /** The game's menus over or under the window: while the mods menu (in Edit Queue) or the options menu is open,
+   *  clicks go through the whole window and it turns see-through; while the chat is open, the part of the window
+   *  over it is cut out, so the chat shows and takes clicks there. Run as the mouse moves and with the queue check. */
+  const updateOverlays = () => {
+    if (!shown()) return;
+    const mods = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
+    const opts = optsBox.checked && !!document.querySelector('.options__container.open');
+    const see = opts ? SETTINGS.optionsSeeThrough : mods ? Number(fadeAmt.value) : 0;
+    root.style.pointerEvents = see ? 'none' : '';
+    if (see !== passSeeThrough) { passSeeThrough = see; root.classList.toggle('qs-passing', !!see); applyFade(); }
+    // the chat's hole, in the window's own pixels; nothing when they don't overlap
+    const chat = chatBox.checked ? document.querySelector('.community-chat-container.is-enabled') : null;
+    let hole = '';
+    if (chat) {
+      const r = root.getBoundingClientRect(), c = chat.getBoundingClientRect();
+      const x1 = Math.max(c.left, r.left) - r.left, y1 = Math.max(c.top, r.top) - r.top;
+      const x2 = Math.min(c.right, r.right) - r.left, y2 = Math.min(c.bottom, r.bottom) - r.top;
+      if (x2 > x1 && y2 > y1) {
+        const w = r.width, h = r.height, px = (v) => `${Math.round(v)}px`;
+        hole = `polygon(evenodd, 0 0, ${px(w)} 0, ${px(w)} ${px(h)}, 0 ${px(h)}, 0 0, ${px(x1)} ${px(y1)}, ${px(x2)} ${px(y1)}, ${px(x2)} ${px(y2)}, ${px(x1)} ${px(y2)}, ${px(x1)} ${px(y1)})`;
+      }
+    }
+    if (root.style.clipPath !== hole) root.style.clipPath = hole;
+  };
+  optsBox.addEventListener('change', () => { updateOverlays(); savePrefs(); });
+  chatBox.addEventListener('change', () => { updateOverlays(); savePrefs(); });
 
   const renderNow = (c) => {
     const [name, hint] = STAGES[c.stage];

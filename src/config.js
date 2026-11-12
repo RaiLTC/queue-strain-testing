@@ -58,6 +58,11 @@ export const SETTINGS = {
   escEditing: 'addon',
   // while editing the queue with its mods menu up, clicks go through this window to the menu under it
   modsPassThrough: true,
+  // while the game's options menu is open, clicks go through this window too, and it turns this see-through (%)
+  optionsPassThrough: true,
+  optionsSeeThrough: 90,
+  // while the chat is open, the part of this window over it is cleared, so the chat shows and takes clicks there
+  chatHole: true,
   // the local estimate: each map's newest this many real plays at the queue's rate (closest to your current level)
   localPlays: 5,
   // calibration simulates each real play again: the newest this many per map
@@ -127,6 +132,10 @@ export const TEXT = {
     outsideClose: 'Closes it (the game ignores the click)',
     outsideThrough: 'Closes it (the game gets the click too)',
     outsideStay: 'Nothing',
+    optionsPass: 'Click through when options menu is open',
+    optionsPassTip: 'While the game\'s options menu is open, this window turns almost invisible and clicks go through it to the menu.',
+    chatHole: 'Show the chat through the window',
+    chatHoleTip: 'While the chat is open, the part of this window over it is cleared, so the chat can be read and clicked there.',
     modsPass: 'Click through when mods menu is open',
     modsPassTip: 'While editing the queue with the mods menu open, this window turns see-through (as much as the fade slider says) and clicks go through it to the game, so the menu can be used even under it.',
   },
