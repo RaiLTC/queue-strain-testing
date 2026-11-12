@@ -84,7 +84,9 @@ export const barHtml = (bar, ahead) => {
       const chosen = [];
       for (const h of tried) {
         if (chosen.length >= room) break;
-        const s = ahead.samples.find(x => x.t >= h * 3600);
+        // where the bar is at exactly that hour, between the plays around it: the same spot the slider's ghost needle shows
+        if (h * 3600 > ahead.samples[ahead.samples.length - 1].t) continue;
+        const s = aheadAt(ahead, h * 3600);
         if (!s) continue;
         const x = s.bar * 100, kept = xpKept(s.minutes);
         if (hitsCut(x) || chosen.some(c => Math.abs(c.x - x) < (c.kept < 0.995 && kept < 0.995 ? 7 : 4))) continue;
