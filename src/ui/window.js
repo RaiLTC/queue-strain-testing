@@ -117,8 +117,9 @@ export const mount = (meta, host) => {
    *  while the window is still the small "scan to start" one. */
   const applyFade = () => {
     fadeVal.textContent = `${fadeAmt.value}%`;
-    fadeAmt.disabled = !fadeBox.checked;
-    const fade = fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh');
+    fadeAmt.disabled = !fadeBox.checked && !modsBox.checked;
+    // while clicks pass through to the mods menu it is see-through too, whether or not fading is on
+    const fade = root.classList.contains('qs-passing') || (fadeBox.checked && !mouseIn && !root.classList.contains('qs-fresh'));
     root.style.opacity = fade ? String(1 - Number(fadeAmt.value) / 100) : '';
   };
   /** Whether the mouse is over the window right now: by the hover state, or by where it last moved. */
@@ -132,7 +133,7 @@ export const mount = (meta, host) => {
   const savePrefs = () => {
     try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, escEditing: escSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
   };
-  modsBox.addEventListener('change', savePrefs);
+  modsBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   escSel.addEventListener('change', savePrefs);
   fadeBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   fadeAmt.addEventListener('input', applyFade);
@@ -402,7 +403,7 @@ export const mount = (meta, host) => {
     if (!shown()) return;
     const pass = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
     root.style.pointerEvents = pass ? 'none' : '';
-    root.classList.toggle('qs-passing', pass);
+    if (root.classList.contains('qs-passing') !== pass) { root.classList.toggle('qs-passing', pass); applyFade(); }
   };
   window.addEventListener('pointermove', moveListener, true);
 
