@@ -42,6 +42,8 @@ export const SETTINGS = {
   fadeAway: false,
   fadeAmount: 50,
   clickOutside: 'through',
+  // while editing the queue with its mods menu up, clicks go through this window to the menu under it
+  modsPassThrough: true,
   // the local estimate: each map's newest this many real plays at the queue's rate (closest to your current level)
   localPlays: 5,
   // calibration simulates each real play again: the newest this many per map
@@ -107,6 +109,8 @@ export const TEXT = {
     outsideClose: 'Closes it (the game ignores the click)',
     outsideThrough: 'Closes it (the game gets the click too)',
     outsideStay: 'Nothing',
+    modsPass: 'Click through to the mods menu',
+    modsPassTip: 'While editing the queue with the mods menu open, clicks go through this window to the game, so the menu can be used even under it.',
   },
   status: {
     simulating: 'Simulating the queue…',

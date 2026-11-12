@@ -12,6 +12,8 @@ export let root = null;
 export let keyListener = null;
 /** Closes the window on a click outside it. */
 export let outsideListener = null;
+/** Lets clicks through the window while the mods menu is up in Edit Queue. */
+export let moveListener = null;
 export let styleEl = null;
 /** Bumped to stop a scan that is running. */
 export let scanToken = 0;
@@ -56,6 +58,7 @@ export const mount = (meta, host) => {
               <input id="qs-fade-amt" type="range" min="10" max="90" step="10" style="width:90px; accent-color:#9ca3af;" title="${esc(TEXT.options.fadeTip)}"><span id="qs-fade-val" class="qs-dim" style="min-width:30px;"></span>
               <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;"><span class="qs-dim" title="${esc(TEXT.options.clickOutsideTip)}">${TEXT.options.clickOutside}</span>
               <select id="qs-outside" style="width:auto;" title="${esc(TEXT.options.clickOutsideTip)}"><option value="close">${TEXT.options.outsideClose}</option><option value="through">${TEXT.options.outsideThrough}</option><option value="stay">${TEXT.options.outsideStay}</option></select></span>
+              <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.modsPassTip)}"><input id="qs-modspass" type="checkbox" style="margin:0;"> ${TEXT.options.modsPass}</label>
             </div>
           </details>
           <div id="qs-status" class="qs-dim" style="margin-top:6px;"></div>
@@ -94,10 +97,11 @@ export const mount = (meta, host) => {
     memTopInput.value = String(memPlays);
   } catch (_) {}
   // the Window group: fade while the mouse is away, and what a click outside does
-  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside');
-  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside;
+  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside'), modsBox = $('#qs-modspass');
+  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside; modsBox.checked = SETTINGS.modsPassThrough;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
+    if (saved.modsPassThrough !== undefined) modsBox.checked = !!saved.modsPassThrough;
     if (saved.fade !== undefined) fadeBox.checked = !!saved.fade;
     if (saved.fadeAmount) fadeAmt.value = String(Math.min(90, Math.max(10, Math.round(saved.fadeAmount / 10) * 10)));
     if (['close', 'through', 'stay'].includes(saved.clickOutside)) outsideSel.value = saved.clickOutside;
@@ -113,8 +117,9 @@ export const mount = (meta, host) => {
   root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
   root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
   const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, windowGroupOpen: winGroup.open })); } catch (_) {}
   };
+  modsBox.addEventListener('change', savePrefs);
   fadeBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   fadeAmt.addEventListener('input', applyFade);
   fadeAmt.addEventListener('change', savePrefs);
@@ -373,6 +378,16 @@ export const mount = (meta, host) => {
     hide();
   };
   window.addEventListener('pointerdown', outsideListener, true);
+
+  // while editing the queue with its mods menu (.mod-select) up, clicks go through the window to the game, if that's
+  // on; checked as the mouse moves, so it follows the menu opening and closing right away
+  moveListener = () => {
+    if (!shown()) return;
+    const pass = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
+    root.style.pointerEvents = pass ? 'none' : '';
+    root.classList.toggle('qs-passing', pass);
+  };
+  window.addEventListener('pointermove', moveListener, true);
 
   const renderNow = (c) => {
     const [name, hint] = STAGES[c.stage];
@@ -1398,6 +1413,10 @@ export const unmount = () => {
   if (outsideListener) {
     window.removeEventListener('pointerdown', outsideListener, true);
     outsideListener = null;
+  }
+  if (moveListener) {
+    window.removeEventListener('pointermove', moveListener, true);
+    moveListener = null;
   }
   if (root) { root.remove(); root = null; }
   if (styleEl) { styleEl.remove(); styleEl = null; }
