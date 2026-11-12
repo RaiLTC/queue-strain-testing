@@ -13,8 +13,9 @@ export const dur = (sec) => {
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 };
 /** Short time text for the window: the numbers stand out, the unit letters are small and dim.
- *  `hot` colours the numbers too (the Levels panel). */
-export const unitsHtml = (text, hot) => esc(text).replace(/(\d+)([a-z]+)/g, `<span class="qs-num${hot ? ' hot' : ''}">$1</span><small class="qs-u">$2</small>`);
+ *  `hot` colours the numbers by unit too (the Levels panel); "<1m" counts as seconds. */
+export const unitsHtml = (text, hot) => esc(text).replace(/(&lt;)?(\d+)([a-z]+)/g, (all, lt, n, u) => `${lt || ''}<span class="qs-num${hot ? ` hot u-${lt ? 's' : u}` : ''}">${n}</span><small class="qs-u">${u}</small>`);
+const UNIT_CLASS = { year: 'y', month: 'mo', day: 'd', hour: 'h', minute: 'm' };
 export const durH = (sec, hot) => unitsHtml(dur(sec), hot);
 /** A stretch of time in words: "1 hour and 30 minutes", "1 year, 2 months, 5 days and 1 minute".
  *  Units that are zero are left out; a month is 30 days, a year 365. With `html`, the numbers are marked (`hot` colours them). */
@@ -24,7 +25,7 @@ export const durWords = (sec, html, hot) => {
   for (const [name, size] of [['year', 525600], ['month', 43200], ['day', 1440], ['hour', 60], ['minute', 1]]) {
     const n = Math.floor(m / size);
     m -= n * size;
-    if (n) parts.push(`${html ? `<span class="qs-num${hot ? ' hot' : ''}">${n}</span>` : n} ${name}${n === 1 ? '' : 's'}`);
+    if (n) parts.push(`${html ? `<span class="qs-num${hot ? ` hot u-${UNIT_CLASS[name]}` : ''}">${n}</span>` : n} ${name}${n === 1 ? '' : 's'}`);
   }
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
 };
