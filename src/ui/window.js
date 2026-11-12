@@ -91,8 +91,7 @@ export const mount = (meta, host) => {
   let levelsView = 'regular', useRoutes = true;
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
-  let debugView = 'table';
-  let debugMap = 0;
+  let mapsOpen = null, mapsSort = 'total';
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1320,10 +1319,8 @@ export const mount = (meta, host) => {
     }).join('');
     // one map at a time: its plays through the forecast, and its XP per play by skill
     const mapIds = [...new Set(queue.entries.map(e => e.beatmapId))];
-    debugMap = Math.min(Math.max(0, debugMap), mapIds.length - 1);
-    let mapCard = '';
-    if (debugView === 'cards' && mapIds.length) {
-      const id = mapIds[debugMap];
+    /** One map's card: its XP per play over the forecast, mindblock, bonuses and level-ups. */
+    const cardOf = (id) => {
       const entry = queue.entries.find(e => e.beatmapId === id);
       const own = r.plays.map((p, i) => ({ p, i })).filter(({ p }) => queue.entries[p.entry].beatmapId === id);
       const skillsHere = SKILLS.filter(sk => own.some(({ p }) => xpOf(p, sk) > 0));
@@ -1334,7 +1331,7 @@ export const mount = (meta, host) => {
       const ups = own.flatMap(({ p }) => p.ups || []);
       // the chart: XP per play over the forecast, a line per skill
       const COLORS = ['#60a5fa', '#f0883e', '#4ade80', '#c084fc', '#facc15', '#f87171', '#22d3ee', '#fb7185', '#a3e635', '#e879f9', '#94a3b8'];
-      const Wc = 760, Hc = 150, pad = 4;
+      const Wc = 760, Hc = 90, pad = 4;
       const maxXp = Math.max(1, ...own.flatMap(({ p }) => skillsHere.map(sk => xpOf(p, sk))));
       const xAt = (t) => pad + (t / Math.max(1, spanH * 3600)) * (Wc - 2 * pad);
       const yAt = (v) => Hc - pad - (v / maxXp) * (Hc - 2 * pad - 10);
@@ -1347,21 +1344,11 @@ export const mount = (meta, host) => {
       const hourLines = [];
       for (let h = 1; h * 3600 < spanH * 3600; h += spanH > 8 ? 2 : 1) hourLines.push(`<line x1="${xAt(h * 3600)}" x2="${xAt(h * 3600)}" y1="0" y2="${Hc}" stroke="#23232f"/><text x="${xAt(h * 3600) + 2}" y="${Hc - 3}" fill="#6b7280" font-size="9">${h}H</text>`);
       const legend = skillsHere.map((sk, k) => `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;"><i style="display:inline-block; width:10px; height:3px; border-radius:2px; background:${COLORS[k % COLORS.length]};"></i>${SKILL_NAMES[sk]}</span>`).join('');
-      mapCard = `
-        <div class="qs-card" style="background:#101018;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div style="font-weight:700; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(entry.title)}">${esc(entry.title)}</div>
-            <div class="qs-pager" style="margin-left:auto;">
-              <button type="button" class="qs-map-page" data-step="-1" ${debugMap === 0 ? 'disabled' : ''} title="Previous map">‹</button>
-              <span>${debugMap + 1}/${mapIds.length}</span>
-              <button type="button" class="qs-map-page" data-step="1" ${debugMap === mapIds.length - 1 ? 'disabled' : ''} title="Next map">›</button>
-            </div>
-          </div>
-          <div class="qs-dim" style="margin:2px 0 8px;">Id ${id} · ${entry.lockedRate ?? `${ctx.rate} (yours)`}× · repeat ${entry.repeat} · Tries now ${num(r.memory[id]).toFixed(1)}</div>
+      return `
+        <div class="qs-card" style="background:#101018; margin:2px 0 6px 16px;">
           ${own.length ? `
           <div class="qs-facts" style="margin-bottom:8px;">
-            <span class="qs-dim">Plays</span><span><b>${own.length}</b> in the next ${durH(spanH * 3600)}</span>
-            <span class="qs-dim">XP</span><span><b>${fmt(sum)}</b> in all, <b>${fmt(sum / own.length)}</b> a play on average</span>
+            <span class="qs-dim">A play</span><span><b>${fmt(sum / own.length)}</b> on average</span>
             <span class="qs-dim">Over time</span><span>${fmt(firstT)} on its first play, ${fmt(lastT)} on its last (<span style="color:${change >= 0 ? '#4ade80' : '#f87171'}">${change >= 0 ? '+' : ''}${Math.round(change * 100)}%</span>)</span>
             ${skillsHere.some(sk => MINDBLOCK.has(sk)) ? `<span class="qs-dim">Mindblock</span><span>×${num(own[0].p.block ?? 1).toFixed(2)} on its first play, ×${num(own[own.length - 1].p.block ?? 1).toFixed(2)} on its last</span>` : ''}
             <span class="qs-dim">Bonuses</span><span>${medals.ok ? `medals ×${medals.multiplier.toFixed(3)}` : 'medals unknown'}${skillsHere.filter(sk => geneOf(sk) > 1).length ? ` · genetics ${skillsHere.filter(sk => geneOf(sk) > 1).map(sk => `${SKILL_SHORT[sk]} ×${geneOf(sk).toFixed(2)}`).join(', ')}` : ''}</span>
@@ -1369,22 +1356,56 @@ export const mount = (meta, host) => {
           </div>
           <div class="qs-dim" style="margin-bottom:4px;">${legend}</div>
           <svg viewBox="0 0 ${Wc} ${Hc}" width="100%" height="${Hc}" preserveAspectRatio="none" style="display:block; background:#0b0b11; border-radius:4px; margin-bottom:8px;">${hourLines.join('')}${upMarks}${lines}</svg>
-          <div class="qs-tablewrap" style="max-height:260px;"><table>
-            <thead><tr><th class="n">#</th><th class="n">Starts</th><th class="n">Strain in</th><th class="n">Tries</th><th class="n">Strain</th><th class="n">Bar after</th>${skillsHere.map(sk => `<th class="n">${SKILL_NAMES[sk]}</th>`).join('')}<th class="n">Total</th><th>Sim</th></tr></thead>
-            <tbody>${own.map(({ p, i }, n) => {
-              const prev = own[n - 1];
-              const d = prev ? totalOf(p) - totalOf(prev.p) : 0;
-              return `<tr>
-                <td class="n qs-dim">${i + 1}</td><td class="n">${clock(p.start)}</td><td class="n">${shortTime(p.before)}</td><td class="n">${p.tries.toFixed(1)}</td>
-                <td class="n">${shortTime(p.strained)}</td><td class="n">${(p.bar * 100).toFixed(0)}%</td>
-                ${skillsHere.map(sk => `<td class="n" title="simulator: ${fmt(num(p.xp[sk]))}">${fmt(xpOf(p, sk))}</td>`).join('')}
-                <td class="n"><b>${fmt(totalOf(p))}</b>${prev && Math.abs(d) >= 0.5 ? ` <span style="font-size:10px; color:${d > 0 ? '#4ade80' : '#f87171'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span>` : ''}</td>
-                <td><span class="qs-pill ${p.fresh ? 'new' : 'hit'}">${p.fresh ? 'new' : 'cache'}</span>${p.passed ? '' : ' <span style="color:#fca5a5; font-weight:700;">fail</span>'}${p.ups && p.ups.length ? ` <span class="qs-up">${p.ups.map(u => `${SKILL_SHORT[u.skill]} ${u.level}`).join(', ')} ↑</span>` : ''}</td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table></div>` : `<div class="qs-dim">Not played within the next ${durH(spanH * 3600)}.</div>`}
+          ` : `<div class="qs-dim">Not played within the next ${durH(spanH * 3600)}.</div>`}
         </div>`;
-    }
+    };
+
+    // ---- Maps: the queue's maps side by side, laid out like Levels (issue #3). What each is worth (XP a minute
+    // against the queue's), what it trains, what it does to strain; a row opens how it wears out ----
+    const SKILL_COLOR = Object.fromEntries(SKILLS.map((sk, k) => [sk, ['#60a5fa', '#f0883e', '#4ade80', '#c084fc', '#facc15', '#f87171', '#22d3ee', '#fb7185', '#a3e635', '#e879f9', '#94a3b8'][k % 11]]));
+    const mapStats = mapIds.map((id) => {
+      const entry = queue.entries.find(e => e.beatmapId === id);
+      const own = r.plays.filter(p => queue.entries[p.entry].beatmapId === id);
+      const bySkill = Object.fromEntries(SKILLS.map(sk => [sk, own.reduce((t, p) => t + xpOf(p, sk), 0)]));
+      const total = own.reduce((t, p) => t + totalOf(p), 0);
+      const minutes = own.reduce((t, p) => t + num(p.lengthMin), 0);
+      // XP mindblock takes off: what the blocked skills would earn without it, less what they do
+      const blockLost = own.reduce((t, p) => t + SKILLS.filter(sk => MINDBLOCK.has(sk)).reduce((u, sk) => { const b = num(p.block ?? 1); return u + (b > 0 && b < 1 ? xpOf(p, sk) / b - xpOf(p, sk) : 0); }, 0), 0);
+      const trend = own.length ? Math.round(own.reduce((t, p) => t + num(p.trend), 0) / own.length) : 0;
+      const strainPer = own.length ? own.reduce((t, p) => t + num(p.strained), 0) / own.length : 0;
+      return { id, entry, own, bySkill, total, minutes, blockLost, trend, strainPer };
+    }).filter(m => m.own.length);
+    const queueTotal = mapStats.reduce((t, m) => t + m.total, 0);
+    const queueMin = mapStats.reduce((t, m) => t + m.minutes, 0);
+    const queuePlays = mapStats.reduce((t, m) => t + m.own.length, 0);
+    const avgMin = queueMin ? queueTotal / queueMin : 0;
+    const sortBy = { total: m => m.total, eff: m => (m.minutes ? m.total / m.minutes : 0), plays: m => m.own.length, queue: m => -mapIds.indexOf(m.id) };
+    const sorted = [...mapStats].sort((a, b) => sortBy[mapsSort](b) - sortBy[mapsSort](a));
+    const vsAvg = (v) => { const d = avgMin ? v / avgMin - 1 : 0; return Math.abs(d) < 0.005 ? '' : `<span style="color:${d > 0 ? '#4ade80' : '#f87171'}; font-size:10px;">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>`; };
+    /** The skills a map trains, as one bar: a piece a skill, its name under it where it fits. */
+    const skillBar = (m) => {
+      const parts = SKILLS.filter(sk => m.bySkill[sk] > 0).sort((a, b) => m.bySkill[b] - m.bySkill[a]);
+      return `<div class="qs-mp-bar">${parts.map(sk => { const f = m.bySkill[sk] / m.total; return `<div style="flex:${f.toFixed(4)};" title="${SKILL_NAMES[sk]}: ${fmt(m.bySkill[sk])} (${Math.round(f * 100)}%)"><i style="background:${SKILL_COLOR[sk]};"></i>${f >= 0.12 ? `<span>${SKILL_SHORT[sk]}</span>` : ''}</div>`; }).join('')}</div>`;
+    };
+    const mapsTab = mapStats.length ? `
+      <div class="qs-lv-ov" style="margin-bottom:8px;">
+        <div class="qs-lv-ovline"><b>${fmt(queueTotal)} XP</b><span class="qs-faint">·</span><span><b>${fmt(queueTotal / Math.max(1e-9, spanH))}</b> <span class="qs-dim">XP/h</span></span><span class="qs-faint">·</span><span><b>${fmt(avgMin)}</b> <span class="qs-dim">XP/min average</span></span><span class="qs-faint">·</span><span><b>${queuePlays}</b> <span class="qs-dim">plays in the next ${durH(spanH * 3600)}</span></span></div>
+      </div>
+      <div class="qs-row" style="margin-bottom:4px;"><span class="qs-dim">Sort</span>
+        <select id="qs-mp-sort" style="width:auto; field-sizing:content;">${[['total', 'Total XP'], ['eff', 'XP a minute'], ['plays', 'Plays'], ['queue', 'Queue order']].map(([v, l]) => `<option value="${v}"${v === mapsSort ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="qs-dim" style="margin-bottom:6px;">What each map is worth, what it trains and what it does to your strain. Click one for more.</div>
+      <table class="qs-lv"><thead><tr><th>Map</th><th class="n">XP</th><th class="n" title="XP a minute of the map, against the queue's average: fair between short and long maps">XP/min</th><th class="n" title="Where each play pushes your strain, and the minutes of strain it adds">Strain</th><th style="width:40%;">Trains</th></tr></thead><tbody>
+        ${sorted.map(m => {
+          const open = mapsOpen === m.id, eff = m.minutes ? m.total / m.minutes : 0;
+          return `<tr class="qs-lv-row qs-mp-row" data-id="${m.id}">
+            <td class="qs-lv-skill"><span class="qs-lv-caret">${open ? '▾' : '▸'}</span><span class="qs-mp-name" title="${esc(m.entry.title)}">${esc(m.entry.title)}</span><span class="qs-sub">${m.entry.lockedRate ?? ctx.rate}× · ${m.own.length} play${m.own.length === 1 ? '' : 's'} · Tries ${num(r.memory[m.id]).toFixed(1)}</span></td>
+            <td class="n"><b>${fmt(m.total)}</b> <span class="qs-dim">${queueTotal ? Math.round(m.total / queueTotal * 100) : 0}%</span></td>
+            <td class="n">${fmt(eff)} ${vsAvg(eff)}</td>
+            <td class="n">${arrows(m.trend)} <span class="qs-dim">${shortTime(m.strainPer)}</span></td>
+            <td class="qs-lv-barcell">${skillBar(m)}</td></tr>
+            ${open ? `<tr><td colspan="5">${m.blockLost >= 1 ? `<div class="qs-dim" style="margin:2px 0 4px 16px;">Mindblock takes <b style="color:#f87171;">${fmt(m.blockLost)}</b> XP from this map over the look-ahead.</div>` : ''}${cardOf(m.id)}</td></tr>` : ''}`;
+        }).join('')}
+      </tbody></table>` : '';
     // ---- Diagnostics: a health line per input, and everything as text to paste (no character id or name) ----
     const diag = (() => {
       const st = r.simStats || { ms: 0, slowest: 0, busy: 0, failed: 0 };
@@ -1447,16 +1468,12 @@ export const mount = (meta, host) => {
       <div class="qs-card">
         <div class="qs-row" style="margin-bottom:6px;">
           <div class="qs-h" style="margin:0;">Every play</div>
-          <div class="qs-pager" style="margin-left:4px;">
-            <button type="button" class="qs-view" data-view="table" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'table' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Table</button>
-            <button type="button" class="qs-view" data-view="cards" style="width:auto; padding:0 8px; font-size:11px;${debugView === 'cards' ? ' background:#4f46e5; border-color:#4f46e5;' : ''}">Cards</button>
-          </div>
-          <span class="qs-dim">${debugView === 'cards' ? 'One map at a time: its XP per play over the forecast.' : 'XP with mindblock, medals and genetics. Hover a number for the simulator\'s own; hover strain or Tries for its step.'}</span>
-          ${debugView === 'table' ? `<span class="qs-dim" style="margin-left:auto;">Show</span>
+          <span class="qs-dim">${'XP with mindblock, medals and genetics. Hover a number for the simulator\'s own; hover strain or Tries for its step.'}</span>
+          ${true ? `<span class="qs-dim" style="margin-left:auto;">Show</span>
           <select class="qs-debug-limit"><option value="50"${debugLimit === 50 ? ' selected' : ''}>first 50 plays</option><option value="200"${debugLimit === 200 ? ' selected' : ''}>first 200 plays</option><option value="0"${debugLimit === 0 ? ' selected' : ''}>all ${r.plays.length} plays</option></select>` : '<span style="margin-left:auto;"></span>'}
           <button type="button" class="qs-plain qs-console" title="Your recent plays as the game stored them, and the calibration play by play">Console</button>
         </div>
-        ${debugView === 'cards' ? mapCard : `<div class="qs-tablewrap"><table>
+        ${`<div class="qs-tablewrap"><table>
           <thead><tr><th>#</th><th>Map</th><th class="n">Starts</th><th class="n">Strain in</th><th class="n">Tries</th><th class="n">Strain / Length</th><th class="n">Bar after</th><th class="n" title="Mindblock: how many of the last 50 plays were this map, and the XP left on the skills it cuts">Mindblock</th>${SKILLS.map(sk => `<th class="n" title="${SKILL_NAMES[sk]}">${SKILL_SHORT[sk]}</th>`).join('')}<th class="n">Total</th><th>Sim</th></tr></thead>
           <tbody>${debugRows}</tbody>
         </table></div>`}
@@ -1482,9 +1499,9 @@ export const mount = (meta, host) => {
     };
 
     // ---- the tabs ----
-    const available = TABS.filter(([id]) => (id === 'xp' || id === 'levels' ? hasXp : id === 'sv' ? !!svTab : true));
+    const available = TABS.filter(([id]) => (id === 'xp' || id === 'levels' ? hasXp : id === 'sv' ? !!svTab : id === 'maps' ? !!mapsTab : true));
     if (!available.some(([id]) => id === activeTab)) activeTab = 'overview';
-    const content = { overview, xp: xpTab, sv: svTab, levels: levelsTab, debug: debugTab }[activeTab];
+    const content = { overview, xp: xpTab, sv: svTab, maps: mapsTab, levels: levelsTab, debug: debugTab }[activeTab];
     outEl.innerHTML = `
       <div class="qs-tabs">${available.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === activeTab ? 'on' : ''}">${label}</button>`).join('')}</div>
       ${content}`;
@@ -1513,12 +1530,9 @@ export const mount = (meta, host) => {
     for (const btn of outEl.querySelectorAll('.qs-page')) {
       btn.onclick = () => { svPage += Number(btn.dataset.step); renderResult(...lastResult); };
     }
-    for (const btn of outEl.querySelectorAll('.qs-view')) {
-      btn.onclick = () => { debugView = btn.dataset.view; renderResult(...lastResult); };
-    }
-    for (const btn of outEl.querySelectorAll('.qs-map-page')) {
-      btn.onclick = () => { debugMap += Number(btn.dataset.step); renderResult(...lastResult); };
-    }
+    for (const tr of outEl.querySelectorAll('.qs-mp-row')) tr.onclick = () => { const id = Number(tr.dataset.id); mapsOpen = mapsOpen === id ? null : id; renderResult(...lastResult); centerVertically(); };
+    const mpSort = outEl.querySelector('#qs-mp-sort');
+    if (mpSort) mpSort.onchange = () => { mapsSort = mpSort.value; renderResult(...lastResult); };
     const limitBox = outEl.querySelector('.qs-debug-limit');
     if (limitBox) limitBox.onchange = () => { debugLimit = Number(limitBox.value) || 0; renderResult(...lastResult); };
     const titles = Object.fromEntries(queue.entries.map(e => [e.beatmapId, e.title]));

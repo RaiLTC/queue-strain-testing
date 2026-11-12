@@ -11,7 +11,7 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.522';
+export const VERSION = '1.3.523';
 export const VERSION_ID = '2026-11-12 06H50M';
 
 // none / info / urgent
@@ -109,7 +109,7 @@ export const SETTINGS = {
 // TEXT: words players see. {name} is filled in by the add-on.
 // ---------------------------------------------------------------------
 export const TEXT = {
-  tabs: { overview: 'Overview', xp: 'XP', sv: 'Speed Jam / Memory', levels: 'Levels', debug: 'Debug' },
+  tabs: { overview: 'Overview', xp: 'XP', sv: 'Speed Jam / Memory', maps: 'Maps', levels: 'Levels', debug: 'Debug' },
   stages: {
     cold: ['Cold', 'Play harder maps to warm up.'],
     warming: ['Warming Up', 'Play harder maps to reach the sweet spot.'],
