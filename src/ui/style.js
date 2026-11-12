@@ -181,6 +181,7 @@ export const CSS = `
 /* where the forecast goes: a faint band over its range, and an arrow above the bar from now to where it ends */
 #qs-window .qs-band { position:absolute; top:7px; height:12px; border-radius:6px; background:rgba(255,255,255,.12); }
 #qs-window .qs-arrow { position:absolute; left:0; top:-11px; width:100%; height:10px; overflow:visible; filter:drop-shadow(0 0 1px rgba(0,0,0,.9)); }
+#qs-window .qs-endline { position:absolute; top:-6px; height:32px; width:0; margin-left:-0.5px; border-left:1px dashed rgba(255,255,255,.45); pointer-events:none; }
 #qs-window .qs-hour-label { position:absolute; top:-23px; transform:translateX(-50%); font-size:9px; color:rgba(229,231,235,.8); white-space:nowrap; }
 #qs-window .qs-arrow-label { position:absolute; top:30px; transform:translateX(-50%); font-size:10px; color:rgba(229,231,235,.8); white-space:nowrap; }
 #qs-window .qs-needle { position:absolute; top:2px; width:4px; height:22px; margin-left:-2px; background:#fff; border-radius:2px; box-shadow:0 0 4px #000; z-index:1; }
