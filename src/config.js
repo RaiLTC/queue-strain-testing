@@ -41,7 +41,10 @@ export const SETTINGS = {
   // gets the click too) or 'stay' (nothing)
   fadeAway: true,
   fadeAmount: 80,
-  clickOutside: 'through',
+  clickOutside: 'close',
+  // Esc while editing the queue: 'addon' (closes this window only; the game doesn't get the Esc) or 'both' (closes
+  // this window and lets the Esc through to the game, which closes Edit Queue)
+  escEditing: 'addon',
   // while editing the queue with its mods menu up, clicks go through this window to the menu under it
   modsPassThrough: true,
   // the local estimate: each map's newest this many real plays at the queue's rate (closest to your current level)
@@ -106,6 +109,10 @@ export const TEXT = {
     fadeTip: 'The window turns see-through while the mouse is outside it, and back when it comes in. The slider sets how see-through.',
     clickOutside: 'Click outside',
     clickOutsideTip: 'What a click outside the window does. A click on Edit the queue, or while it is open, never closes it.',
+    escEditing: 'Esc while editing the queue',
+    escEditingTip: 'What Esc does while Edit Queue is open: close only this window, or close it and Edit Queue too.',
+    escAddon: 'Closes this window',
+    escBoth: 'Closes it and Edit Queue',
     outsideClose: 'Closes it (the game ignores the click)',
     outsideThrough: 'Closes it (the game gets the click too)',
     outsideStay: 'Nothing',

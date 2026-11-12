@@ -58,6 +58,8 @@ export const mount = (meta, host) => {
               <input id="qs-fade-amt" type="range" min="10" max="90" step="10" style="width:90px; accent-color:#9ca3af;" title="${esc(TEXT.options.fadeTip)}"><span id="qs-fade-val" class="qs-dim" style="min-width:30px;"></span>
               <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;"><span class="qs-dim" title="${esc(TEXT.options.clickOutsideTip)}">${TEXT.options.clickOutside}</span>
               <select id="qs-outside" style="width:auto;" title="${esc(TEXT.options.clickOutsideTip)}"><option value="close">${TEXT.options.outsideClose}</option><option value="through">${TEXT.options.outsideThrough}</option><option value="stay">${TEXT.options.outsideStay}</option></select></span>
+              <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;"><span class="qs-dim" title="${esc(TEXT.options.escEditingTip)}">${TEXT.options.escEditing}</span>
+              <select id="qs-esc-edit" style="width:auto;" title="${esc(TEXT.options.escEditingTip)}"><option value="addon">${TEXT.options.escAddon}</option><option value="both">${TEXT.options.escBoth}</option></select></span>
               <label class="qs-dim" style="display:flex; align-items:center; gap:4px; margin-left:8px;" title="${esc(TEXT.options.modsPassTip)}"><input id="qs-modspass" type="checkbox" style="margin:0;"> ${TEXT.options.modsPass}</label>
             </div>
           </details>
@@ -97,10 +99,11 @@ export const mount = (meta, host) => {
     memTopInput.value = String(memPlays);
   } catch (_) {}
   // the Window group: fade while the mouse is away, and what a click outside does
-  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside'), modsBox = $('#qs-modspass');
-  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside; modsBox.checked = SETTINGS.modsPassThrough;
+  const winGroup = $('#qs-win-group'), fadeBox = $('#qs-fade'), fadeAmt = $('#qs-fade-amt'), fadeVal = $('#qs-fade-val'), outsideSel = $('#qs-outside'), modsBox = $('#qs-modspass'), escSel = $('#qs-esc-edit');
+  fadeBox.checked = SETTINGS.fadeAway; fadeAmt.value = String(SETTINGS.fadeAmount); outsideSel.value = SETTINGS.clickOutside; modsBox.checked = SETTINGS.modsPassThrough; escSel.value = SETTINGS.escEditing;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
+    if (['addon', 'both'].includes(saved.escEditing)) escSel.value = saved.escEditing;
     if (saved.modsPassThrough !== undefined) modsBox.checked = !!saved.modsPassThrough;
     if (saved.fade !== undefined) fadeBox.checked = !!saved.fade;
     if (saved.fadeAmount) fadeAmt.value = String(Math.min(90, Math.max(10, Math.round(saved.fadeAmount / 10) * 10)));
@@ -117,9 +120,10 @@ export const mount = (meta, host) => {
   root.addEventListener('mouseenter', () => { mouseIn = true; applyFade(); });
   root.addEventListener('mouseleave', () => { mouseIn = false; applyFade(); });
   const savePrefs = () => {
-    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, windowGroupOpen: winGroup.open })); } catch (_) {}
+    try { localStorage.setItem('queue-strain:prefs', JSON.stringify({ hours: wholeHours(hoursInput.value), runsPerPlay2: parseInt(runsInput.value, 10) || SETTINGS.runsPerPlay, autoRescan: autoBox.checked, animations: animBox.checked, localPlays: localCount(), memPlays, tab: activeTab, fade: fadeBox.checked, fadeAmount: Number(fadeAmt.value), clickOutside: outsideSel.value, modsPassThrough: modsBox.checked, escEditing: escSel.value, windowGroupOpen: winGroup.open })); } catch (_) {}
   };
   modsBox.addEventListener('change', savePrefs);
+  escSel.addEventListener('change', savePrefs);
   fadeBox.addEventListener('change', () => { applyFade(); savePrefs(); });
   fadeAmt.addEventListener('input', applyFade);
   fadeAmt.addEventListener('change', savePrefs);
@@ -348,6 +352,8 @@ export const mount = (meta, host) => {
       e.stopPropagation();
       if (shown()) hide(); else show();
     } else if (e.key === 'Escape' && shown()) {
+      // while editing the queue, "close both" lets this Esc go on to the game, which closes Edit Queue
+      if (!consoleEl && escSel.value === 'both' && editQueueOpen()) { hide(); return; }
       e.preventDefault();
       e.stopPropagation();
       if (consoleEl) closeConsole(); else hide();
