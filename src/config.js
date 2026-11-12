@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.49';
-export const VERSION_ID = '2026-11-11 14H21M';
+export const VERSION = '1.3.50';
+export const VERSION_ID = '2026-11-12 05H27M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -24,7 +24,14 @@ export const NOTICE = {
 
 export const CHANGELOG = {
   id: VERSION_ID,
-  text: `v${VERSION} · 11 Nov 2026\n• Overall level and rebirth in the levels tab\n• Queue changes update almost instantly, without a full scan\n• Local estimate uses your plays from the last 24 hours\n• Shorter, clearer texts\n• Turning off animations also turns off the level up colour\n• Bunch of fixes`,
+  text: `v${VERSION} · 12 Nov 2026
+• Strain bar shows where you're headed, with a time slider
+• XP loss shown past the XP cut
+• Overall level on top, rebirth time in words
+• Clearer times and colours
+• Window fades when not in use and moves aside for Edit Queue
+• Click outside or Esc to close, new Window options
+• Bunch of fixes`,
 };
 
 // ---------------------------------------------------------------------
