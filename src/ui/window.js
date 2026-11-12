@@ -1160,9 +1160,9 @@ export const mount = (meta, host) => {
           const last = k === n - 1;
           const at = x.markAt[b2];
           const goal = !x.lifetime && last && x.start >= 100 && b2 === x.need;
-          // the route's upgrades bought inside this piece: a line each. The next one also gets its number and the time
+          // only the route's next upgrade, if it's in this piece (the ones after come after a level drop): its line, number and time
           // until it ("#4 2h 10m"), under the bar, or above it when it sits in the first 5% of the bar's first piece (measured like the progress, from its start mark)
-          const here = ups.filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9);
+          const here = (next ? [next] : []).filter(ev => ev.level > a2 + (k ? 1e-9 : -1e-9) && ev.level <= b2 + 1e-9);
           const leftOf = (ev) => `${((ev.level - a2) / (b2 - a2) * 100).toFixed(2)}%`;
           const upMarks = here.map(ev => `<b class="qs-lv-up" style="left:${leftOf(ev)}" title="${esc(upgradeText(ev))}"></b>`).join('');
           let upLabels = '';
