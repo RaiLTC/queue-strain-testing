@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.51';
-export const VERSION_ID = '2026-11-12 05H32M';
+export const VERSION = '1.3.52';
+export const VERSION_ID = '2026-11-12 05H42M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -25,6 +25,7 @@ export const NOTICE = {
 export const CHANGELOG = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
+• Fixed window fading when opened under the mouse
 • Opening the Window options no longer moves the window
 
 v1.3.5
