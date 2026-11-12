@@ -1,7 +1,7 @@
 // Formatting and the small pieces of the window: bars, graphs, the notice and changelog buttons.
 
 import { CHANGELOG, NOTICE, TEXT } from '../config.js';
-import { BAR_ZONES, XP_CUT, fatigueLevel, fatigueXp } from '../rules/fatigue.js';
+import { BAR_ZONES, STAGES, XP_CUT, fatigueLevel, fatigueXp, stageOf } from '../rules/fatigue.js';
 
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 /** A play's start, as a table column: 1:05. */
@@ -73,24 +73,30 @@ export const barHtml = (bar, ahead) => {
       const stops = [];
       for (let k = 0; k <= 20; k++) { const o = k / 20; stops.push(`<stop offset="${o}" stop-color="${zoneColor((a + (e - a) * o) / 100)}"/>`); }
       const id = `qs-arrow-${Math.random().toString(36).slice(2, 8)}`;
-      // a small mark where the bar is after each full hour (the last one is the arrowhead)
-      // with its hour written above it, unless that would overlap a label already placed or the XP cut's text
+      // a small mark where the bar is after some of the hours (the end is the arrowhead), its hour written above it
       let marks = '';
-      const placed = [];
-      // marks every hour on a long arrow, every few hours on a short one: about one per 6% of the bar it spans
-      const room = Math.floor(Math.abs(e - a) / 6);
-      const step = [1, 2, 3, 4, 6, 8, 12, 24].find(n => Math.ceil(ahead.hours / n) - 1 <= room) ?? 24;
-      for (let h = step; h < ahead.hours; h += step) {
+      // which hours get a mark, most useful first: 2h, 1h, 3h, then every 6th, every 3rd, the rest. As many as the
+      // arrow has room for (about one per 7% of the bar it spans, at least one), none crowding another
+      const room = Math.max(1, Math.floor(Math.abs(e - a) / 7));
+      const all = Array.from({ length: Math.max(0, Math.ceil(ahead.hours) - 1) }, (_, i) => i + 1);
+      const rank = (h) => (h === 2 ? 0 : h === 1 ? 1 : h === 3 ? 2 : h % 6 === 0 ? 3 : h % 3 === 0 ? 4 : 5);
+      const tried = [...all].sort((p, q) => rank(p) - rank(q) || p - q);
+      const chosen = [];
+      for (const h of tried) {
+        if (chosen.length >= room) break;
         const s = ahead.samples.find(x => x.t >= h * 3600);
-        if (!s) break;
+        if (!s) continue;
+        const x = s.bar * 100, kept = xpKept(s.minutes);
+        if (hitsCut(x) || chosen.some(c => Math.abs(c.x - x) < (c.kept < 0.995 && kept < 0.995 ? 7 : 4))) continue;
+        chosen.push({ h, s, x, kept });
+      }
+      chosen.sort((p, q) => p.h - q.h);
+      for (const { h, s } of chosen) {
         const x = s.bar * 100, kept = xpKept(s.minutes), color = keptColor(kept);
         const tip = `After ${h} hour${h === 1 ? '' : 's'}: ${Math.round(s.bar * 100)}%${kept < 0.995 ? ` · physical XP kept ×${kept.toFixed(2)}` : ''}`;
-        if (!hitsCut(x) && placed.every(p => Math.abs(p.x - x) >= (p.wide && kept < 0.995 ? 7 : 4))) {
-          placed.push({ x, wide: kept < 0.995 }); // a label with its XP lost under it needs more room
-          future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">${h}<small class="qs-u">h</small></div>`;
-          // past the cut, how much physical XP is lost there, under the arrow
-          if (kept < 0.995) future += `<div class="qs-loss-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">-${Math.round((1 - kept) * 100)}%</div>`;
-        }
+        future += `<div class="qs-hour-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">${h}<small class="qs-u">h</small></div>`;
+        // past the cut, how much physical XP is lost there, under the arrow (a label with it needs more room: see above)
+        if (kept < 0.995) future += `<div class="qs-loss-label" style="left:${x.toFixed(2)}%; color:${color};" title="${tip}">-${Math.round((1 - kept) * 100)}%</div>`;
         marks += `<line x1="${(s.bar * 100).toFixed(2)}" x2="${(s.bar * 100).toFixed(2)}" y1="2.2" y2="7.8" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity=".9"><title>${tip}</title></line>`;
       }
       future += `<svg class="qs-arrow" viewBox="0 0 100 10" preserveAspectRatio="none"><title>After ${hours}: ${Math.round(e)}%</title><defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.toFixed(2)}" x2="${e.toFixed(2)}" y1="0" y2="0">${stops.join('')}</linearGradient></defs><line x1="${a.toFixed(2)}" x2="${(e - dir * 1.2).toFixed(2)}" y1="5" y2="5" stroke="url(#${id})" stroke-width="1.6" vector-effect="non-scaling-stroke"/><path d="M${e.toFixed(2)} 5 L${(e - dir * 1.4).toFixed(2)} 1.8 L${(e - dir * 1.4).toFixed(2)} 8.2 Z" fill="${zoneColor(end)}"/>${marks}</svg>`;
@@ -108,7 +114,39 @@ export const barHtml = (bar, ahead) => {
     <div class="qs-cut" style="left:${XP_CUT * 100}%" title="300 min of strain: XP gains start being cut"></div>
     ${cutText === 'none' ? '' : `<div class="qs-cut-label${cutText === 'side' ? ' side' : ''}" style="left:${XP_CUT * 100}%">300 min · XP cut</div>`}
     <div class="qs-needle" style="left:${(bar * 100).toFixed(2)}%"></div>
-  </div>`;
+    ${ahead && ahead.samples.length > 1 ? '<div class="qs-at"></div>' : ''}
+  </div>
+  ${ahead && ahead.samples.length > 1 ? `<div class="qs-slide"><span class="qs-dim">now</span><input type="range" class="qs-slide-in" min="0" max="${Math.round(ahead.hours * 3600)}" step="900"><span class="qs-dim">${ahead.hours}<small class="qs-u">h</small></span><span class="qs-slide-text"></span></div>` : ''}`;
+};
+
+/** Where the forecast is at `t` seconds from now: the bar and the minutes of strain, between the two samples around it. */
+const aheadAt = (ahead, t) => {
+  const s = ahead.samples;
+  const i = s.findIndex(x => x.t >= t);
+  if (i <= 0) return i === 0 ? s[0] : s[s.length - 1];
+  const p = s[i - 1], q = s[i], f = (t - p.t) / Math.max(1, q.t - p.t);
+  return { bar: p.bar + (q.bar - p.bar) * f, minutes: p.minutes + (q.minutes - p.minutes) * f };
+};
+/** The slider's time, kept while the same forecast is redrawn and set back to 2 hours for a new one. */
+let slideSec = 0, slideFor = null;
+/** Wires the time slider under a bar drawn by barHtml: dragging it moves a ghost needle to where the bar is then,
+ *  and says so next to it. */
+export const wireSlider = (box, ahead) => {
+  const input = box.querySelector('.qs-slide-in'), ghost = box.querySelector('.qs-at'), text = box.querySelector('.qs-slide-text');
+  if (!input || !ghost || !ahead) return;
+  if (slideFor !== ahead) { slideFor = ahead; slideSec = Math.min(7200, ahead.hours * 3600); }
+  input.value = String(slideSec);
+  const update = () => {
+    slideSec = Number(input.value);
+    const at = aheadAt(ahead, slideSec), kept = xpKept(at.minutes);
+    ghost.style.left = `${(at.bar * 100).toFixed(2)}%`;
+    ghost.style.display = slideSec > 0 ? '' : 'none';
+    text.innerHTML = slideSec > 0
+      ? `After ${durH(slideSec)}: <b>${Math.round(at.bar * 100)}%</b> · ${STAGES[stageOf(at.bar)][0]}${kept < 0.995 ? ` · <span style="color:${keptColor(kept)}">-${Math.round((1 - kept) * 100)}% physical XP</span>` : ''}`
+      : 'Now';
+  };
+  input.addEventListener('input', update);
+  update();
 };
 
 /** The bar over the forecast: the zones as bands and the bar as a line. */
