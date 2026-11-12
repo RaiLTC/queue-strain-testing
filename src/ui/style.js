@@ -61,7 +61,8 @@ export const CSS = `
 #qs-window .qs-lv-later > i { font-style:normal; font-size:7px; line-height:7px; }
 #qs-window .qs-lv-later.up { bottom:calc(100% + 2px); }
 #qs-window .qs-lv-later.down { top:calc(100% + 1px); }
-#qs-window .qs-lv-later.side { top:calc(100% + 2px); display:block; }
+#qs-window .qs-lv-later.side { top:calc(100% + 2px); display:block; transform:translateX(2px); }
+#qs-window .qs-lv-later.up:not(:has(i)) { transform:translateX(2px); }
 #qs-window .qs-lv-later.side.l { transform:translateX(calc(-100% - 3px)); }
 #qs-window .qs-lv-later.side.r { transform:translateX(2px); }
 #qs-window .qs-lv-laterline { position:absolute; top:0; height:9px; width:2px; margin-left:-1px; background:rgba(251,191,36,.33); pointer-events:auto; cursor:help; }

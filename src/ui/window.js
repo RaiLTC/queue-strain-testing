@@ -92,8 +92,6 @@ export const mount = (meta, host) => {
   let debugLimit = 50;
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
-  /** The Levels bar's width when last drawn, to tell in pixels when upgrade marks would crowd each other. */
-  let lastLvBarW = 500;
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1202,34 +1200,12 @@ export const mount = (meta, host) => {
           cells.push(`<div class="qs-lv-cell"><div class="qs-lv-seg${last && soon ? ' shift' : completes ? ' complete' : ''}">${endF > nowF ? `<i class="gain" style="left:${nowF * 100}%; width:${(endF - nowF) * 100}%"></i>` : ''}<i style="width:${nowF * 100}%"></i>${upMarks}</div>${upLabels}
             <span class="qs-lv-tk${last ? '' : ' mid'}${goal ? ' goal' : at !== undefined ? ' time' : ''}">${label}</span></div>`);
         }
-        // the two upgrades after the next one, faint: each its own line with its number under it; close together (or
-        // inside your progress) one arrow with both numbers, over the bar when close to the next upgrade
+        // the two upgrades after the next one, faint: each its own line, its number under it (merged into one arrow, or
+        // moved over the bar, once drawn: see the pass after rendering)
         const posOf = (lv) => { for (let k = 0; k < n; k++) if (lv > m[k] - 1e-9 && lv <= m[k + 1] + 1e-9) return (k + (lv - m[k]) / (m[k + 1] - m[k])) / n; return null; };
         const leftAt = (X) => `calc((100% - ${(n - 1) * 3}px) * ${X.toFixed(5)} + ${(Math.min(n - 1, Math.floor(X * n)) * 3)}px)`;
-        const nextX = next ? posOf(next.level) : null, nowX = posOf(x.start) ?? 0;
-        // closeness in pixels (the bar's width from the last time it was drawn): a label is about 30px wide
-        const CLOSE = 30 / Math.max(120, lastLvBarW);
-        const later = ups.slice(1, 3).map(ev => ({ ev, X: posOf(ev.level) })).filter(o => o.X !== null).sort((p1, p2) => p1.X - p2.X);
-        const groups = [];
-        for (const o of later) { const g = groups[groups.length - 1]; if (g && o.X - g[g.length - 1].X < CLOSE) g.push(o); else groups.push([o]); }
-        const gX = (g) => g.reduce((t, o) => t + o.X, 0) / g.length;
-        const nums = (g) => g.map(o => o.ev).sort((e1, e2) => e1.k - e2.k).map(ev => `#${ev.k}`).join(', ');
-        const tipOf = (g) => esc(g.map(o => upgradeText(o.ev)).join('\n'));
-        let marks = '';
-        for (const g of groups) {
-          const X = gX(g), nearNext = nextX !== null && Math.abs(X - nextX) < CLOSE;
-          if (nearNext) {
-            // close to the next upgrade: one arrow over the bar, out of its label's way
-            above = true;
-            marks += `<span class="qs-lv-later up" style="left:${leftAt(X)};" title="${tipOf(g)}">${nums(g)}<i>▼</i></span>`;
-          } else if (g.length > 1 || X <= nowX + 1e-9) {
-            // several on one spot, or one inside your progress (a line there would hide in the fill): one arrow under the bar
-            marks += `<span class="qs-lv-later down" style="left:${leftAt(X)};" title="${tipOf(g)}"><i>▲</i>${nums(g)}</span>`;
-          } else {
-            // on its own: a faint line, its number under it
-            marks += `<b class="qs-lv-laterline" style="left:${leftAt(X)};" title="${tipOf(g)}"></b><span class="qs-lv-later side r" style="left:${leftAt(X)};" title="${tipOf(g)}">${nums(g)}</span>`;
-          }
-        }
+        const later = ups.slice(1, 3).map(ev => ({ ev, X: posOf(ev.level) })).filter(o => o.X !== null);
+        const marks = later.map(o => `<b class="qs-lv-laterline" style="left:${leftAt(o.X)};" title="${esc(upgradeText(o.ev))}"></b><span class="qs-lv-later side" data-k="${o.ev.k}" style="left:${leftAt(o.X)};" title="${esc(upgradeText(o.ev))}">#${o.ev.k}</span>`).join('');
         return `<div class="qs-lv-bar${above ? ' ups' : ''}"><span class="qs-lv-tk first">${m[0]}</span>${cells.join('')}${marks ? `<div class="qs-lv-laterbox">${marks}</div>` : ''}</div>`;
       };
       const prestigeText = (x) => {
@@ -1514,17 +1490,41 @@ export const mount = (meta, host) => {
 
     // the next upgrade's label under a bar: when it would cover one of the bar's level marks (the 100 at its start,
     // say), it moves above the bar instead
-    { const lvBar = outEl.querySelector('.qs-lv-bar .qs-lv-cell'); if (lvBar) { const w = lvBar.closest('.qs-lv-bar').getBoundingClientRect().width; if (w > 100) lastLvBarW = w; } }
-    // the faint later upgrades under a bar: one that would cover a level mark moves above the bar
-    for (const lbl of outEl.querySelectorAll('.qs-lv-later.down, .qs-lv-later.side')) {
-      const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
-      const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
-      if (hits) { lbl.classList.remove('down', 'side', 'l', 'r'); lbl.classList.add('up'); lbl.innerHTML = lbl.textContent.replace('▲', '') + '<i>▼</i>'; bar.classList.add('ups'); }
-    }
     for (const lbl of outEl.querySelectorAll('.qs-lv-uplbl.below')) {
       const bar = lbl.closest('.qs-lv-bar'), r = lbl.getBoundingClientRect();
       const hits = [...bar.querySelectorAll('.qs-lv-tk')].some(t => { const q = t.getBoundingClientRect(); return q.width && r.left < q.right + 2 && r.right > q.left - 2; });
       if (hits) { lbl.classList.replace('below', 'above'); bar.classList.add('ups'); }
+    }
+    // the faint later upgrades, now that they're drawn: two within 30px of each other merge into one arrow under
+    // the bar; a number that covers something (a level mark, the next upgrade's label, the other number) moves
+    // over the bar, its line staying where it is
+    for (const bar of outEl.querySelectorAll('.qs-lv-bar')) {
+      const box = bar.querySelector('.qs-lv-laterbox');
+      if (!box) continue;
+      const lines = [...box.querySelectorAll('.qs-lv-laterline')], lbls = [...box.querySelectorAll('.qs-lv-later')];
+      if (lines.length === 2) {
+        const [a, b] = lines.map(l => l.getBoundingClientRect());
+        if (a.width && Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 30) {
+          const mid = ((a.left + a.right + b.left + b.right) / 4) - box.getBoundingClientRect().left;
+          const nums = lbls.map(l => Number(l.dataset.k)).sort((x1, x2) => x1 - x2).map(k => `#${k}`).join(', ');
+          const tip = lbls.map(l => l.title).join('\n');
+          box.innerHTML = `<span class="qs-lv-later down" style="left:${mid.toFixed(1)}px;" title="${esc(tip)}"><i>▲</i>${nums}</span>`;
+        }
+      }
+      const others = [...bar.querySelectorAll('.qs-lv-tk, .qs-lv-uplbl')].map(t => t.getBoundingClientRect()).filter(q => q.width);
+      const placed = [];
+      for (const lbl of box.querySelectorAll('.qs-lv-later')) {
+        const r = lbl.getBoundingClientRect();
+        const hits = [...others, ...placed].some(q => r.left < q.right + 2 && r.right > q.left - 2 && r.top < q.bottom && r.bottom > q.top);
+        if (hits) {
+          const merged = lbl.classList.contains('down');
+          lbl.classList.remove('down', 'side');
+          lbl.classList.add('up');
+          if (merged) lbl.innerHTML = `${lbl.textContent.replace('▲', '')}<i>▼</i>`;
+          bar.classList.add('ups');
+        }
+        placed.push(lbl.getBoundingClientRect());
+      }
     }
     for (const tr of outEl.querySelectorAll('.qs-lv-row')) {
       tr.onclick = () => { const k = tr.dataset.skill; if (levelsOpen.has(k)) levelsOpen.delete(k); else levelsOpen.add(k); renderResult(...lastResult); centerVertically(); };
