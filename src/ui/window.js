@@ -483,7 +483,7 @@ export const mount = (meta, host) => {
   chatBox.addEventListener('change', () => { updateOverlays(); savePrefs(); });
 
   /** The state's name over the bar, at the mark where that state begins (Sweet Spot in the middle of its band, the
-   *  ends at the bar's ends), with the next play's arrows on the side it heads to (inward at the ends). */
+   *  ends at the bar's ends), with the next play's arrows on the side it heads to (inward at the ends); the name alone is centred. */
   const STATE_AT = { cold: 0, warming: 20, peak: 50, pushing: 80, fatigued: 100 };
   const stateLabel = (c, name) => {
     const at = STATE_AT[c.stage] ?? 50, edge = at <= 0 ? 'left' : at >= 100 ? 'right' : '';
@@ -491,7 +491,7 @@ export const mount = (meta, host) => {
     const right = edge === 'left' || (edge !== 'right' && c.trend > 0);
     const nm = `<span style="color:${STAGE_COLOR[c.stage]}">${name}</span>`;
     const pos = edge === 'left' ? 'left:0;' : edge === 'right' ? 'right:0;' : `left:${at}%; transform:translateX(-50%);`;
-    return `<span class="qs-state" style="${pos}">${right ? nm + tr : tr + nm}</span>`;
+    return `<span class="qs-state" style="${pos}">${nm}${tr.replace('class="qs-trend"', `class="qs-trend ${right ? 'side-r' : 'side-l'}"`)}</span>`;
   };
   const renderNow = (c) => {
     const [name, hint] = STAGES[c.stage];

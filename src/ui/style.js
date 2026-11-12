@@ -191,6 +191,9 @@ export const CSS = `
 #qs-window .qs-bar-labels > .qs-state { position:absolute; bottom:0; display:flex; align-items:baseline; gap:8px; white-space:nowrap; }
 #qs-window .qs-bar.sliding .qs-arrow, #qs-window .qs-bar.sliding .qs-endline, #qs-window .qs-bar.sliding .qs-arrow-label, #qs-window .qs-bar.sliding .qs-hour-label, #qs-window .qs-bar.sliding .qs-loss-label { display:none; }
 #qs-window .qs-bar-labels .qs-trend { font-size:13px; letter-spacing:-2px; }
+#qs-window .qs-state > .qs-trend { position:absolute; bottom:0; }
+#qs-window .qs-state > .qs-trend.side-r { left:calc(100% + 8px); }
+#qs-window .qs-state > .qs-trend.side-l { right:calc(100% + 8px); }
 #qs-window .qs-track { position:absolute; left:0; right:0; top:10px; height:6px; border-radius:3px;
   background:linear-gradient(90deg, #4f9cf5 0%, #6fb8c9 22%, #d9c64b 40%, #e8c147 60%, #f0883e 80%, #b48cff 100%); }
 #qs-window .qs-tick { position:absolute; top:5px; width:2px; height:16px; background:#e5e7eb; border-radius:1px; }
