@@ -3,7 +3,7 @@
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { cached, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, historyMaps, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
-import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
+import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
 import { LOG_READ_KEY, MATCH_HELP, NOTICE_READ_KEY, SKILL_NAMES, SKILL_SHORT, STAGE_COLOR, TABS, arrows, barHtml, changelogHtml, clock, hotfixHtml, hotfixId, HOTFIX_READ_KEY, dur, durH, durWords, esc, fmt, graphHtml, logId, matchColor, matchText, minText, noticeHtml, noticeId, shortTime, unitsHtml, wireSlider } from './parts.js';
@@ -1395,16 +1395,25 @@ export const mount = (meta, host) => {
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
     const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
     const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
+    const sgEnds = (end) => {
+      if (!end || !sg) return '';
+      const from = stageOf(sg.startBar), to = stageOf(end.bar), kept = fatigueXp(fatigueLevel(end.minutes));
+      return `<span style="white-space:nowrap;"><span style="color:${STAGE_COLOR[from]}">${STAGES[from][0]}</span> <span class="qs-dim">→</span> <span style="color:${STAGE_COLOR[to]}">${STAGES[to][0]}</span>${kept < 0.995 ? ` <span style="color:#f87171;">· −${Math.round((1 - kept) * 100)}% XP</span>` : ''}</span>`;
+    };
     const sgPct = (v, base) => { const d = base > 0 ? v / base - 1 : 0; return `<span style="color:${d > 0.002 ? '#4ade80' : d < -0.002 ? '#f87171' : '#9ca3af'}; font-weight:600;">${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</span>`; };
     const sgBest = !sg || !sg.base ? '' : sg.best.length ? sg.best.map((b, i) => `<div class="qs-card" style="background:#101018; margin-top:8px;">
-          <div><b>${sg.best.length > 1 ? `Option ${i + 1}` : sg.speed === 'quick' ? 'Best single change' : 'Best combination'}</b> · ${b.exact !== undefined ? `${sgPct(b.exact, b.exactBase)} <span class="qs-dim">${fmt(b.exact)} ${sgGoalName(sg.goal)} · checked with the simulator</span>` : `${sgPct(b.score, sg.base)} <span class="qs-dim">${fmt(b.score)} ${sgGoalName(sg.goal)} · estimate</span>`}</div>
-          <ol style="margin:4px 0 0 18px; padding:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol>
+          <div style="display:flex; gap:8px;"><div><b>${sg.best.length > 1 ? `Option ${i + 1}` : sg.speed === 'quick' ? 'Best single change' : 'Best combination'}</b> · ${b.exact !== undefined ? `${sgPct(b.exact, b.exactBase)} <span class="qs-dim">${fmt(b.exact)} ${sgGoalName(sg.goal)} · checked with the simulator</span>` : `${sgPct(b.score, sg.base)} <span class="qs-dim">${fmt(b.score)} ${sgGoalName(sg.goal)} · estimate</span>`}</div></div>
+          <div style="display:flex; gap:16px; align-items:center;">
+            <ol style="margin:4px 0 0 18px; padding:0; flex:1; min-width:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol>
+            <div class="qs-sg-end" title="Your strain now → after the next ${aheadText} with this queue"><div class="qs-dim">Strain after ${aheadText}</div><div class="qs-sg-endstate">${sgEnds(b.end)}</div></div>
+          </div>
         </div>`).join('') : sg.running ? '' : '<div class="qs-dim" style="margin-top:8px;">No change found that beats your queue as it is.</div>';
     const sgSingles = sg && sg.base && sg.singles.length ? `<div class="qs-dim" style="margin-top:10px;">Each change on its own</div>
       <div class="qs-tablewrap" style="margin-top:4px;"><table>
-        <thead><tr><th>Change</th><th class="n">${sgGoalName(sg.goal)}</th><th class="n">vs now</th><th>Why</th></tr></thead><tbody>
-        <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.base)}</td><td class="n qs-dim">–</td><td></td></tr>
-        ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${v.score > sg.base * 1.002 ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.score)}</td><td class="n">${sgPct(v.score, sg.base)}</td><td class="qs-dim">${esc(v.why)}</td></tr>`).join('')}
+        <thead><tr><th>Change</th><th class="n">${sgGoalName(sg.goal)}</th><th class="n">vs now</th><th>Why</th><th title="Your strain now → after the next ${aheadText}">Strain</th></tr></thead><tbody>
+        <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.base)}</td><td class="n qs-dim">–</td><td></td><td>${sgEnds(sg.baseEnd)}</td></tr>
+        ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${v.score > sg.base * 1.002 ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.score)}</td><td class="n">${sgPct(v.score, sg.base)}</td><td class="qs-dim">${esc(v.why)}</td><td>${sgEnds(v.end)}</td></tr>`).join('')}
       </tbody></table></div>` : '';
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
@@ -1419,6 +1428,7 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${aheadText}:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
         ${sgBest}
         ${sgSingles}
       </div>`;
@@ -1655,7 +1665,8 @@ export const mount = (meta, host) => {
           if (p.bar >= XP_CUT) cut += len;
           block += num(p.block ?? 1) * len;
         }
-        return { score: xp / Math.max(1, ctx.hours), m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 } };
+        const last = res.samples[res.samples.length - 1] || {};
+        return { score: xp / Math.max(1, ctx.hours), m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const pc = (v) => `${Math.round(v * 100)}%`;
       const whyOf = (m, bm) => (bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
@@ -1707,6 +1718,8 @@ export const mount = (meta, host) => {
         const baseKey = keyOf(queue.entries);
         const base = await evalQ(queue.entries, false);
         s.base = base.score;
+        s.baseEnd = base.end;
+        s.startBar = num((r.samples[0] || {}).bar);
         let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
         const all = [];
         for (let step = 1; step <= plan.steps && alive(); step++) {
@@ -1716,13 +1729,13 @@ export const mount = (meta, host) => {
             const key = keyOf(mv.entries);
             if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
             const ev = await evalQ(mv.entries, false);
-            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, parent: f.score, m: ev.m });
+            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, parent: f.score, m: ev.m, end: ev.end });
             s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
-            if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, why: whyOf(c.m, base.m) }));
+            if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, why: whyOf(c.m, base.m), end: c.end }));
             draw();
           }
           all.push(...cands);
-          s.best = all.filter(c => c.score > base.score * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, entries: c.entries }));
+          s.best = all.filter(c => c.score > base.score * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, entries: c.entries, end: c.end }));
           // only what beats the queue it came from goes on to the next step
           frontier = cands.filter(c => c.score > c.parent * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.width);
           if (!frontier.length) break;
