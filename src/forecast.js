@@ -218,13 +218,14 @@ const playLevelOf = (level, xp, lifetimeXp, prestige = 0) => { const lt = xpGive
 /** How much of a physical skill's level is there to play with, tired and warmed up as it is (shared fatigue.ts). */
 const keptShare = (level, fatigue, warm = 1) => lerp(1, 0.25, fatigue) * lerp(lerp(1, 0.5, Math.min(1, level / 100)), 1, warm);
 const xpToLevel = (level) => { let t = 0; for (let i = 0; i < level; i++) t += xpForLevel(i); return t; };
-const levelsMemo = new Map();
+const levelsMemo = new WeakMap();
 const officialLevels = (skills, minutes, rested = false) => {
-  const mk = `${rested ? 1 : 0}|${Math.round(minutes * 10)}|${GAME_SKILLS.map(n => { const s = skills[n] || {}; return `${s.level}:${s.xp}:${s.lifetime_xp}:${s.prestige}`; }).join(',')}|${num(skills.stamina && skills.stamina.upgrades)}`;
-  if (levelsMemo.has(mk)) return levelsMemo.get(mk);
-  if (levelsMemo.size > 5000) levelsMemo.clear();
+  let byMin = levelsMemo.get(skills);
+  if (!byMin) { byMin = new Map(); levelsMemo.set(skills, byMin); }
+  const mk = `${rested ? 1 : 0}|${minutes}`;
+  if (byMin.has(mk)) return byMin.get(mk);
   const v = officialLevelsNow(skills, minutes, rested);
-  levelsMemo.set(mk, v);
+  byMin.set(mk, v);
   return v;
 };
 const officialLevelsNow = (skills, minutes, rested = false) => {
@@ -322,6 +323,7 @@ const trimOldest = (coll, max) => { if (coll.size <= max) return; let n = coll.s
 const compactRow = (row) => ({ passed: row.passed, strained_minutes: row.strained_minutes, fail_seconds: row.fail_seconds, fail_progress: row.fail_progress, xp: Object.fromEntries(Object.entries(row.xp || {}).map(([sk, v]) => [sk, num(v)])) });
 const learnedOf = (plays) => (plays <= 0 ? false : plays >= 68 ? true : undefined);
 const ownMult = (s) => { const od = num(s && s.overdrive), odM = od <= 0 ? 1 : Math.max(1, Math.min(od, 2.5 * Math.pow(od, Math.log10(2)))); return (1 + 0.1 * num(s && s.upgrades) * odM) * Math.pow(1.1, num(s && s.prestige)); };
+const lookupFree = () => { const now = Date.now(); while (lookupTimes.length && now - lookupTimes[0] > 60000) lookupTimes.shift(); return lookupTimes.length < 55; };
 const lookupSlot = async () => {
   for (;;) {
     const now = Date.now();
@@ -332,9 +334,11 @@ const lookupSlot = async () => {
 };
 /** Asks the shared cache about `ids` at play levels `levels` (the 11 joined, as officialLevels gives them). */
 // `sink`: rows go to it (key, row) instead of being kept here: for the library, which asks about every map at once
-export const sharedLookup = async (generation, levels, ids, mods = [], sink = null) => {
+// `wait` false: when the minute's lookups are used up, nothing is asked (and it can be asked again later)
+export const sharedLookup = async (generation, levels, ids, mods = [], sink = null, wait = true) => {
   const want = sink ? [...new Set(ids)] : [...new Set(ids)].filter(id => !sharedAsked.has(`${generation}|${levels}|${id}`));
   if (!want.length || typeof fetch === 'undefined') return;
+  if (!wait && !lookupFree()) { sharedStats.skipped = num(sharedStats.skipped) + 1; return; }
   const lv = levels.split(',').map(Number), body = Object.fromEntries(GAME_SKILLS.map((sk, i) => [sk, lv[i]]));
   for (let i = 0; i < want.length; i += 200) {
     const chunk = want.slice(i, i + 200);
@@ -382,7 +386,7 @@ const sharedAnswer = async (skills, generation, beatmapId, rate, mods, minutes, 
   const learned = learnedOf(plays);
   if (learned === undefined || (mods || []).includes('NF')) return null;
   const levels = officialLevels(skills, minutes);
-  await sharedLookup(generation, levels, ids && ids.length ? ids : [beatmapId], mods);
+  await sharedLookup(generation, levels, ids && ids.length ? ids : [beatmapId], mods, null, false);
   const row = sharedRows.get(`${generation}|${levels}|${beatmapId}@${rate}@${MOD_ORDER.filter(m => (mods || []).includes(m)).join(',')}@${learned ? 1 : 0}`);
   if (!row) return null;
   const tired = fatigueXp(fatigueLevel(minutes));
@@ -662,7 +666,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   const simStats = { ms: 0, slowest: 0, busy: 0, failed: 0 };
   /** Where a forecast's time goes (for the Suggestions' timing line): exact cache hits, building the index of
    *  stored answers, nearest-answer lookups, new simulator calls. */
-  const timing = { exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0 };
+  const timing = { exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, reused: 0 };
   const askRun = async (asOwner, asSkills, beatmapId, r, m, bucket, playsKey, run) => {
     const key = `${beatmapId}|${r}|${[...m].sort().join('')}|${bucket}|${playsKey}${run ? `|#${run}` : ''}`;
     const kept = cached(asOwner, key);
@@ -792,6 +796,13 @@ export async function forecast(queue, ctx, onProgress, token) {
   const endSec = hours * 3600;
   let loopFrom = first.length === loop.length ? { plays: 0, t: 0, minutes: startMinutes } : undefined;
   let loopSec = 0, loopDrift = 0;
+  // ctx.prior: the forecast this one is a change of ({ plays, entries }). While its plays are of the same maps (same
+  // rate, mods, length) from the same strain, their answers are taken as they were instead of asked for again; from
+  // the first play that differs, everything is asked for as usual
+  const prior = ctx.prior && Array.isArray(ctx.prior.plays) && Array.isArray(ctx.prior.entries) ? ctx.prior : null;
+  let reusing = !!prior;
+  const sameEntry = (a, b) => a && b && a.beatmapId === b.beatmapId && (a.lockedRate ?? rate) === (b.lockedRate ?? rate) && num(a.lengthSec) === num(b.lengthSec)
+    && (a.lockedRate === undefined ? mods : (a.lockedMods || [])).join(',') === (b.lockedRate === undefined ? mods : (b.lockedMods || [])).join(',');
   for (let i = 0; t < endSec && plays.length < MAX_PLAYS; i++) {
     if (token !== scanToken) throw new Error('stopped');
     await breathe();
@@ -799,7 +810,13 @@ export async function forecast(queue, ctx, onProgress, token) {
     const entry = queue.entries[at];
     const before = restedFatigue(fatigue, t * 1000, genes, gear);
     const tries = playsOf[entry.beatmapId] || 0;
-    const { answer, fresh, approx, bucket, playsKey } = await simulateWith(entry, before, tries);
+    let got = null;
+    if (reusing) {
+      const pp = prior.plays[i];
+      if (pp && pp.ans && sameEntry(prior.entries[pp.entry], entry) && Math.abs(num(pp.before) - before) < 1e-9 && Math.abs(num(pp.tries) - tries) < 1e-9) { got = { answer: pp.ans, fresh: false, approx: pp.approx, bucket: pp.simStrain, playsKey: pp.simTries }; timing.reused++; fromCache++; }
+      else reusing = false;
+    }
+    const { answer, fresh, approx, bucket, playsKey } = got || await simulateWith(entry, before, tries);
     const recentPlays = recentPlaysOf(recent, entry.beatmapId, nowMs + t * 1000);
     const block = mindblockFactor(recentPlays);
     const r = entry.lockedRate ?? rate;
@@ -827,7 +844,7 @@ export async function forecast(queue, ctx, onProgress, token) {
     if (ups.length) owner = ownerNow();
     recent.push({ at: nowMs + start * 1000, id: entry.beatmapId });
     if (recent.length > RECENT_LIMIT * 2) recent.splice(0, recent.length - RECENT_LIMIT);
-    plays.push({ entry: at, start, end: t, before, tries, fresh, approx: !!approx, ups, recentPlays, block, simStrain: bucket, simTries: playsKey, failAt: passed ? undefined : num(answer.fail_progress), xp: answer.xp || {}, strained, lengthMin: fullSec / 60, minutes: fatigue.minutes, bar, trend: warmupTrend(fullSec / 60, strained), passed });
+    plays.push({ entry: at, start, end: t, before, tries, fresh, approx: !!approx, ups, recentPlays, block, simStrain: bucket, simTries: playsKey, failAt: passed ? undefined : num(answer.fail_progress), ans: answer, xp: answer.xp || {}, strained, lengthMin: fullSec / 60, minutes: fatigue.minutes, bar, trend: warmupTrend(fullSec / 60, strained), passed });
     samples.push({ t, minutes: fatigue.minutes, bar });
     onProgress(progress());
     t += delaySec;

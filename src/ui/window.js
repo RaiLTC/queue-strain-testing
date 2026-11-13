@@ -186,7 +186,7 @@ export const mount = (meta, host) => {
   if (liveTimer) clearInterval(liveTimer);
   liveTimer = setInterval(async () => {
     // only while the XP tab of a finished scan is on screen; the game's database is local, so this costs no call
-    if (!root || !shown() || scanning || !lastResult || activeTab !== 'xp') return;
+    if (!root || !shown() || scanning || !lastResult || activeTab !== 'xp' || document.hidden) return;
     const [queue, ctx, , r] = lastResult;
     let newest = 0;
     try {
@@ -243,7 +243,7 @@ export const mount = (meta, host) => {
     return (maps(then) === maps(now) ? SETTINGS.rescanWaitSec.repeats : SETTINGS.rescanWaitSec.maps) * 1000;
   };
   /** The queue is checked every SETTINGS.queueCheckMs, only while the window is open. */
-  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { fitAroundQueue(); updateOverlays(); watchQueue(); void watchUpgrades(); }, SETTINGS.queueCheckMs); };
+  const startQueueWatch = () => { if (!queueTimer) queueTimer = setInterval(() => { if (document.hidden) return; fitAroundQueue(); updateOverlays(); watchQueue(); void watchUpgrades(); }, SETTINGS.queueCheckMs); };
   const stopQueueWatch = () => { if (queueTimer) { clearInterval(queueTimer); queueTimer = null; } };
   const watchQueue = () => {
     if (!root || !shown() || !scanKey || autoPaused) return;
@@ -494,7 +494,7 @@ export const mount = (meta, host) => {
    *  clicks go through the whole window and it turns see-through; while the chat is open, the part of the window
    *  over it is cut out, so the chat shows and takes clicks there. Run as the mouse moves and with the queue check. */
   const updateOverlays = () => {
-    if (!shown()) return;
+    if (!shown() || document.hidden) return;
     if (!mouseIn) applyFade(); // the mouse moving between the queue and the right side changes the fade while editing
     const mods = modsBox.checked && editQueueOpen() && !!document.querySelector('.mod-select');
     const addons = optsBox.checked && addonsPageOpen(), opts = optsBox.checked && optionsOpen();
@@ -1777,10 +1777,10 @@ export const mount = (meta, host) => {
       };
       const seen = new Map();
       const reuse = { memoryLocal: r.memoryLocal, memory: r.memory, triesFrom: r.triesFrom, calib: r.calib, medals: r.medals, recent: r.recentPlays };
-      const evalQ = async (entries) => {
+      const evalQ = async (entries, from = null) => {
         const k = keyOf(entries);
         if (!seen.has(k)) {
-          const res = await forecast({ ...queue, entries }, { ...ctx, quick: true, reuse }, () => {}, tok);
+          const res = await forecast({ ...queue, entries }, { ...ctx, quick: true, reuse, prior: from && from.res ? { plays: from.res.plays, entries: from.entries } : null }, () => {}, tok);
           const m = measure(res);
           seen.set(k, { m });
           s.done++;
@@ -1789,7 +1789,7 @@ export const mount = (meta, host) => {
         return { m: seen.get(k).m, res: null };
       };
       try {
-        const base = await evalQ(queue.entries);
+        const base = await evalQ(queue.entries, { res: r, entries: queue.entries });
         s.base = base.m.score; s.baseTotal = base.m.total; s.baseFocus = base.m.focusTotal; s.focusNames = [...focus].map(sk => SKILL_NAMES[sk]); s.baseEnd = base.m.end; s.baseCrossed = base.m.crossed;
         s.startBar = num((r.samples[0] || {}).bar);
         // each queue map's XP a minute in the forecast, against the queue's
@@ -1875,12 +1875,12 @@ export const mount = (meta, host) => {
           const found = [];
           for (const cur of beam) {
           if (!alive()) break;
-          if (!cur.res) cur.res = await forecast({ ...queue, entries: cur.entries }, { ...ctx, quick: true, reuse }, () => {}, tok);
+          if (!cur.res) cur.res = await forecast({ ...queue, entries: cur.entries }, { ...ctx, quick: true, reuse, prior: { plays: r.plays, entries: queue.entries } }, () => {}, tok);
           rateFrom(cur.res, cur.entries);
           // the step's changes, up to 8 forecast at once (independent of each other), then looked at in order
           const moves = movesOf(cur.entries);
           s.stepTotal += moves.length;
-          const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.stepDone++; s.note = stepNote(); draw(); return ev; }), 8);
+          const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries, cur); s.stepDone++; s.note = stepNote(); draw(); return ev; }), 8);
           for (let mi = 0; mi < moves.length; mi++) {
             const mv = moves[mi], ev = evs[mi];
             if (!ev || !alive()) break;
@@ -1905,7 +1905,7 @@ export const mount = (meta, host) => {
               swaps.push({ step: { kind: 'swap', a: w.e.title, b: added.title, rate: ad.mv.step.rate, why: `${w.e.title} adds the least to this queue; ${ad.mv.step.why}` }, entries: [...cur.entries.filter((_, j) => j !== w.i), added] });
             }
             s.stepTotal += swaps.length;
-            const sev = await pool(swaps.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.stepDone++; s.note = stepNote(); draw(); return ev; }), 8);
+            const sev = await pool(swaps.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries, cur); s.stepDone++; s.note = stepNote(); draw(); return ev; }), 8);
             swaps.forEach((mv, mi) => {
               const ev = sev[mi];
               if (!ev) return;
@@ -1929,7 +1929,7 @@ export const mount = (meta, host) => {
       try {
         if (s.best && !s.stop && tok === scanToken && lastResult[3] === r) {
           s.step = 7; s.stepTotal = 0; s.note = 'Checking the suggested queue exactly'; draw();
-          const bm = measure(r), em = measure(await forecast({ ...queue, entries: s.best.entries }, { ...ctx, reuse }, () => {}, tok));
+          const bm = measure(r), em = measure(await forecast({ ...queue, entries: s.best.entries }, { ...ctx, reuse, prior: { plays: r.plays, entries: queue.entries } }, () => {}, tok));
           s.base = bm.score; s.baseTotal = bm.total; s.baseFocus = bm.focusTotal; s.baseEnd = bm.end; s.baseCrossed = bm.crossed;
           if (em.crossed || em.score <= bm.score) { s.best = null; s.checkedWorse = true; }
           else { Object.assign(s.best, { total: em.total, focusTotal: em.focusTotal, end: em.end, checked: true }); s.cmp = { base: bm.skXp, best: em.skXp }; }
