@@ -22,6 +22,7 @@ const FILES = [
   'src/rules/routes.js',
   'src/game.js',
   'src/forecast.js',
+  'src/library.js',
   'src/ui/style.js',
   'src/ui/parts.js',
   'src/ui/window.js',

@@ -1,6 +1,7 @@
 // The window: mount, the options, scanning, and every tab.
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
+import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
 import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
@@ -95,6 +96,8 @@ export const mount = (meta, host) => {
   /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
   /** Suggestions: whether they may go past Peak, and the playlist name to write to. */
   let sgPastPeak = false, sgPlaylistName = 'Suggested Playlist';
+  /** The library (Debug): being built, and the saved one for the character as it is. */
+  let libRun = null, libSaved = null, libFor = '', libSkill = 'speed';
   try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); sgPastPeak = !!sv.pastPeak; if (typeof sv.playlist === 'string' && sv.playlist.trim()) sgPlaylistName = sv.playlist.trim(); } catch (_) {}
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
@@ -1431,6 +1434,16 @@ export const mount = (meta, host) => {
         <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.baseTotal / Math.max(1, ctx.hours))}</td><td class="n qs-dim">–</td><td></td><td>${sgEnds(sg.baseEnd)}</td></tr>
         ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${!v.crossed && v.score > sg.base * 1.002 ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.total / Math.max(1, ctx.hours))}</td><td class="n">${v.crossed ? `<span style="color:#f87171;">${sg.pastPeak ? 'past XP cut' : 'past Peak'}</span>` : sgPct(v.total, sg.baseTotal)}</td><td class="qs-dim">${esc(v.step.why || '')}</td><td>${sgEnds(v.end)}</td></tr>`).join('')}
       </tbody></table></div>` : '';
+    const libraryPanel = `<div class="qs-card" style="margin-bottom:10px;">
+        <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
+          <div class="qs-h" style="margin:0;">Library</div>
+          <span class="qs-dim">The best maps per skill from plays that already exist (the official sim's at levels within 3 of yours, this add-on's, and yours), each confirmed with one simulation at your levels.</span>
+          ${libRun ? `<button type="button" class="qs-plain qs-lib-stop" style="margin-left:auto;">Stop</button><span class="qs-dim">${esc(libRun.phase || 'Starting')}${libRun.skill ? ` · ${SKILL_NAMES[libRun.skill]}` : ''} · ${num(libRun.calls)} simulations</span>` : `<button type="button" class="qs-plain qs-lib-run" style="margin-left:auto;">${libSaved ? 'Refresh' : 'Build library'}</button>`}
+        </div>
+        ${libSaved ? (() => { const list = (libSaved.lists || {})[libSkill] || [], f = (medals.ok ? medals.multiplier : 1) * geneOf(libSkill);
+          return `<div class="qs-row" style="gap:6px; margin:6px 0 2px;"><span class="qs-dim">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${SKILLS.map(sk => `<option value="${sk}"${sk === libSkill ? ' selected' : ''}>${SKILL_NAMES[sk]}</option>`).join('')}</select><span class="qs-dim">top ${LIBRARY_TOP} · ${new Date(libSaved.at).toLocaleString()} · ${num(libSaved.calls)} simulations</span></div>
+            ${list.length ? `<ol style="margin:0 0 0 22px; padding:0;">${list.map(x => `<li>${esc(x.title)} <span class="qs-dim">${x.rate}× · ${esc(x.source)}</span> <b>${fmt(x.perMin * f)}</b><span class="qs-dim">/min</span> ${x.sure ? '<span style="color:#4ade80;" title="Simulated at your exact levels">✓</span>' : '<span class="qs-dim" title="Not confirmed yet">≈</span>'}</li>`).join('')}</ol>` : '<div class="qs-dim">No plays for this skill yet.</div>'}`; })() : ''}
+      </div>`;
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
         <div class="qs-dim" style="margin-bottom:6px;">Drop the maps that hold your queue back, repeat its best ones instead, or add a top performer that fits it: whatever gives the most XP an hour over the next ${aheadText}, without going past Peak. Estimates from plays already simulated; apply a change and rescan for the exact numbers.</div>
@@ -1501,7 +1514,7 @@ export const mount = (meta, host) => {
           <button type="button" class="qs-plain qs-diag-console">Open in console</button></div>
         <div class="qs-diag">${diag.health.map(([k, state, v]) => `<span title="${esc(v)}"><i style="background:${DOT[state]}"></i><b>${k}</b> ${esc(v)}</span>`).join('')}</div>
       </div>`;
-    const debugTab = `${diagPanel}
+    const debugTab = `${diagPanel}${libraryPanel}
       <div class="qs-cols3" style="margin-bottom:10px;">${scanPanel}${calibPanel}${queuePanel}</div>
       <div class="qs-card">
         <div class="qs-row" style="margin-bottom:6px;">
@@ -1648,6 +1661,30 @@ export const mount = (meta, host) => {
       };
     }
     const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ pastPeak: sgPastPeak, playlist: sgPlaylistName })); } catch (_) {} };
+    // the library: the saved one for this character's levels, loaded once, then drawn with it
+    { const key = JSON.stringify([ctx.row.id, SKILLS.map(sk => [ctx.row[sk], ctx.row[`${sk}LifetimeXp`], ctx.row[`${sk}Prestige`], ctx.row[`${sk}Upgrades`]])]);
+      if (libFor !== key) { libFor = key; libSaved = null; void loadLibrary(ctx.row).then(v => { if (v && libFor === key) { libSaved = v; if (lastResult && (activeTab === 'debug' || activeTab === 'suggest')) renderResult(...lastResult); } }); } }
+    const libSel = outEl.querySelector('#qs-lib-skill');
+    if (libSel) libSel.onchange = () => { libSkill = libSel.value; renderResult(...lastResult); };
+    const libStopBtn = outEl.querySelector('.qs-lib-stop');
+    if (libStopBtn) libStopBtn.onclick = () => { if (libRun) libRun.stop = true; };
+    const libRunBtn = outEl.querySelector('.qs-lib-run');
+    if (libRunBtn) libRunBtn.onclick = async () => {
+      const speedUps = num(ctx.row.speedUpgrades), lo = Math.max(0.5, 1 - 0.05 * speedUps), hi = Math.min(1.5, 1 + 0.05 * speedUps);
+      const rates = []; for (let x = Math.round(lo * 20); x <= Math.round(hi * 20); x++) rates.push(Math.round(x * 5) / 100);
+      const k = r.knots || [], minutes = k.length > 2 ? (num(k[1]) + num(k[2])) / 2 : 120;
+      libRun = { phase: 'Starting', calls: 0, stop: false };
+      renderResult(...lastResult);
+      let drawn = 0;
+      try {
+        const out = await buildLibrary({ api: ctx.api, row: ctx.row, rates, mods: ctx.mods, minutes, bonus: (sk) => (medals.ok ? medals.multiplier : 1) * geneOf(sk),
+          stopped: () => !libRun || libRun.stop,
+          onProgress: (pr) => { Object.assign(libRun, pr); if (Date.now() - drawn > 600 && activeTab === 'debug' && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
+        if (out && !(libRun && libRun.stop)) libSaved = out;
+      } catch (e) { logProblem('library', e); }
+      libRun = null;
+      if (lastResult) renderResult(...lastResult);
+    };
     const sgPeakBox = outEl.querySelector('#qs-sg-pastpeak');
     if (sgPeakBox) sgPeakBox.onchange = () => { sgPastPeak = sgPeakBox.checked; sgSave(); };
     const sgName = outEl.querySelector('#qs-sg-plname');
@@ -1714,7 +1751,17 @@ export const mount = (meta, host) => {
         const shareOf = Object.fromEntries(SKILLS.map(sk => [sk, base.m.total > 0 ? (base.m.skXp[sk] || 0) / base.m.total : 0]));
         const queueRates = [...new Set([num(ctx.rate) || 1, ...queue.entries.map(e => num(e.lockedRate ?? ctx.rate) || 1)])];
         let tops = [];
-        try {
+        if (libSaved && libSaved.lists) {
+          const main = SKILLS.filter(sk => shareOf[sk] >= 0.1);
+          const seenIds = new Set();
+          for (const sk of main) for (const x of (libSaved.lists[sk] || [])) {
+            if (seenIds.has(`${x.id}@${x.rate}`) || queue.entries.some(q => q.beatmapId === x.id)) continue;
+            seenIds.add(`${x.id}@${x.rate}`);
+            const f = (medals.ok ? medals.multiplier : 1) * geneOf(sk);
+            tops.push({ id: x.id, rate: x.rate, title: x.title, lengthSec: x.lengthSec, fit: shareOf[sk] * x.perMin * f, perMin: x.perMin * f });
+          }
+          tops = tops.sort((a, b) => b.fit - a.fit).slice(0, 15);
+        } else try {
           const entries = await catalogEntries();
           const byId = new Map(entries.map(e => [e.id, e]));
           const skills = Object.fromEntries(SKILLS.map(sk => [sk, { level: Math.floor(num(ctx.row[sk])), xp: num(ctx.row[`${sk}XP`]), lifetime_xp: num(ctx.row[`${sk}LifetimeXp`]), prestige: num(ctx.row[`${sk}Prestige`]), upgrades: num(ctx.row[`${sk}Upgrades`]), overdrive: num(ctx.row[`${sk}Overdrive`]) }]));

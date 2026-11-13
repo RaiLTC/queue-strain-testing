@@ -201,7 +201,7 @@ const officialLevels = (skills, minutes, rested = false) => {
  * change it. Speed Jam's and Memory's XP come from a record whose own two levels are within 2. `exact` when every
  * level is equal. Same sim version, under 7 days.
  */
-export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds, rates, playsOf) => {
+export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds, rates, playsOf, tol = 2) => {
   const out = new Map();
   const index = await loadOfficial();
   if (!index.size || !index.db) return out;
@@ -223,7 +223,7 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
     const nine = lv.map((v, i) => (SJM.includes(i) ? 0 : diff(lv, i)));
     if (Math.max(...nine) <= 10) { const d = nine.reduce((t, v) => t + v, 0); if (!nineDist.has(mr) || d < nineDist.get(mr)) { nineDist.set(mr, d); forNine.set(mr, key); } }
     const sd = Math.max(...SJM.map(i => diff(lv, i)));
-    if (sd <= 2 && (!sjmDist.has(mr) || sd < sjmDist.get(mr))) { sjmDist.set(mr, sd); forSjm.set(mr, key); }
+    if (sd <= tol && (!sjmDist.has(mr) || sd < sjmDist.get(mr))) { sjmDist.set(mr, sd); forSjm.set(mr, key); }
   }
   const want = [...new Set([...forNine.values(), ...forSjm.values()])];
   const recs = new Map();
@@ -242,7 +242,7 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
     // its key skills (5%+ of its XP) must be within 2 levels of yours
     const lv = key.split('|')[1].split(','), tot = GAME_SKILLS.filter(sk => sk !== 'speedjam' && sk !== 'memory').reduce((t, sk) => t + mean(rec, sk), 0);
     if (!(tot > 0)) continue;
-    if (GAME_SKILLS.some((sk, i) => !SJM.includes(i) && mean(rec, sk) / tot >= 0.05 && diff(lv, i) > 2)) continue;
+    if (GAME_SKILLS.some((sk, i) => !SJM.includes(i) && mean(rec, sk) / tot >= 0.05 && diff(lv, i) > tol)) continue;
     const sj = forSjm.get(mr) && recs.get(forSjm.get(mr));
     const xp = {};
     for (const sk of GAME_SKILLS) {
