@@ -1418,7 +1418,7 @@ export const mount = (meta, host) => {
       return `<div class="qs-sg-rates">${row('XP/h', 3600)}<br>${row('XP/m', 60)}<br>${row('XP/s', 1, 1)}</div>`;
     };
     const sgBest = !sg || sg.base === undefined ? '' : sg.best ? `<div class="qs-card" style="background:#101018; margin-top:8px;">
-          <div><b>Suggested queue</b> · ${sgPct(sg.best.total, sg.baseTotal)} <span class="qs-dim">XP in the next ${aheadText} · estimate</span></div>
+          <div><b>Suggested queue</b> · ${sgPct(sgVal(sg.best), sgVal(sg))} <span class="qs-dim">${sg.focusNames && sg.focusNames.length ? `${esc(sg.focusNames.join(' + '))} XP` : 'XP'} in the next ${aheadText} · estimate</span></div>
           <div style="display:flex; gap:16px; align-items:center;">
             <div style="flex:1; min-width:0;"><ol style="margin:4px 0 0 18px; padding:0;">${sg.best.steps.map(st => `<li>${sgText(st)} <span class="qs-dim">${esc(st.why || '')}</span></li>`).join('')}</ol>
               <div class="qs-row" style="gap:6px; margin-top:8px; flex-wrap:wrap;">
@@ -1759,11 +1759,17 @@ export const mount = (meta, host) => {
         s.base = base.m.score; s.baseTotal = base.m.total; s.baseFocus = base.m.focusTotal; s.focusNames = [...focus].map(sk => SKILL_NAMES[sk]); s.baseEnd = base.m.end; s.baseCrossed = base.m.crossed;
         s.startBar = num((r.samples[0] || {}).bar);
         // each queue map's XP a minute in the forecast, against the queue's
-        const perMap = new Map();
-        for (const p of base.res.plays) { const e = queue.entries[p.entry]; if (!e) continue; const m = perMap.get(e.beatmapId) || { xp: 0, min: 0 }; m.xp += worth(p); m.min += num(p.lengthMin); perMap.set(e.beatmapId, m); }
+        // each map's XP a minute in a queue's forecast, against that queue's average: worked out again for the queue
+        // each step builds on, so maps it added can be repeated too
+        let perMap = new Map(), avg = 0;
+        const rateFrom = (res, es) => {
+          perMap = new Map();
+          for (const p of res.plays) { const e = es[p.entry]; if (!e) continue; const m = perMap.get(e.beatmapId) || { xp: 0, min: 0 }; m.xp += worth(p); m.min += num(p.lengthMin); perMap.set(e.beatmapId, m); }
+          avg = [...perMap.values()].reduce((t, m) => t + m.xp, 0) / Math.max(1e-9, [...perMap.values()].reduce((t, m) => t + m.min, 0));
+        };
+        rateFrom(base.res, queue.entries);
         const rateOf = (id) => { const m = perMap.get(id); return m && m.min > 0 ? m.xp / m.min : 0; };
-        const avg = [...perMap.values()].reduce((t, m) => t + m.xp, 0) / Math.max(1e-9, [...perMap.values()].reduce((t, m) => t + m.min, 0));
-        const pct = (v) => `${Math.round(Math.abs(v / avg - 1) * 100)}%`;
+        const pct = (v) => `${Math.round(Math.abs(v / Math.max(1e-9, avg) - 1) * 100)}%`;
         // top performers that fit the queue: from plays already simulated at your levels (no new calls), scored by
         // the skills the queue trains, in its own mix; the best 15
         s.note = 'Looking for top performers';
@@ -1823,10 +1829,11 @@ export const mount = (meta, host) => {
           return out;
         };
         // one pass of single changes, then the best of them combined, up to 3
-        let cur = { entries: queue.entries, steps: [], m: base.m };
+        let cur = { entries: queue.entries, steps: [], m: base.m, res: base.res };
         for (let step = 1; step <= 3 && alive(); step++) {
           s.note = `Step ${step} of 3 · ${s.done} queues checked`;
           let best = null;
+          rateFrom(cur.res, cur.entries);
           // the step's changes, up to 8 forecast at once (independent of each other), then looked at in order
           const moves = movesOf(cur.entries);
           const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.note = `Step ${step} of 3 · ${s.done} queues checked`; draw(); return ev; }), 8);
@@ -1835,7 +1842,7 @@ export const mount = (meta, host) => {
             if (!ev || !alive()) break;
             if (step === 1) s.singles.push({ step: mv.step, score: ev.m.score, total: ev.m.total, focusTotal: ev.m.focusTotal, crossed: ev.m.crossed, end: ev.m.end });
             const better = cur.m.crossed ? ev.m.score > cur.m.score + 0.01 : !ev.m.crossed && ev.m.score > cur.m.score * 1.005;
-            if (better && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m };
+            if (better && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m, res: ev.res };
             draw();
           }
           if (!best) break;
