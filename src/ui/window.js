@@ -1452,7 +1452,7 @@ export const mount = (meta, host) => {
         <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: suggestions keep you within Peak once you've reached it. On: they may go into Pushing, never past the XP cut."><input id="qs-sg-pastpeak" type="checkbox"${sgPastPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow past Peak</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: once you've reached Peak, suggestions keep you from dropping back below it (Warming Up, Cold). On: they may let you cool down below Peak."><input id="qs-sg-belowpeak" type="checkbox"${sgBelowPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow below Peak</label>
-          ${sg && sg.running ? `<span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
+          ${sg && sg.running ? `<span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>${sg ? `<span class="qs-dim">Done · ${num(sg.done)} queues checked</span>` : ''}`}
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px;" title="Ticked skills: suggestions get them the most XP they can, whatever the others get. None ticked: the most XP in all."><span class="qs-dim">Focus on</span>${SKILLS.map(sk => `<label class="qs-dim" style="display:flex; align-items:center; gap:3px;"><input class="qs-sg-focus" data-sk="${sk}" type="checkbox"${sgFocus.includes(sk) ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;">${SKILL_NAMES[sk]}</label>`).join('')}</div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
@@ -1723,7 +1723,7 @@ export const mount = (meta, host) => {
       /** A queue's worth: its XP an hour; one that goes past Peak (or the XP cut, allowed past Peak) is out. */
       const measure = (res) => {
         const limit = pastPeak ? XP_CUT : BAR_ZONES[1];
-        let xp = 0, wx = 0, under = false, crossed = false, reached = false;
+        let xp = 0, wx = 0, under = false, crossed = false, reached = false, mins = 0, outMins = 0;
         const skXp = {};
         for (const p of res.plays) {
           xp += totalOf(p);
@@ -1734,9 +1734,13 @@ export const mount = (meta, host) => {
           // below Peak (not allowed): once you've reached Peak, dropping back below it rules the queue out too
           if (p.bar >= BAR_ZONES[0]) reached = true;
           else if (reached && !belowPeak) crossed = true;
+          const len = num(p.lengthMin) || 1;
+          mins += len;
+          if ((under && p.bar >= limit) || (reached && !belowPeak && p.bar < BAR_ZONES[0])) outMins += len;
         }
         const last = res.samples[res.samples.length - 1] || {};
-        return { total: xp, focusTotal: wx, score: crossed ? -1 : wx / H, crossed, skXp, end: { bar: num(last.bar), minutes: num(last.minutes) } };
+        // out of range ranks below everything in range, the less time out the better (so steps can bring it back in)
+        return { total: xp, focusTotal: wx, score: crossed ? -1 - outMins / Math.max(1, mins) : wx / H, crossed, skXp, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const seen = new Map();
       const reuse = { memoryLocal: r.memoryLocal, memory: r.memory, triesFrom: r.triesFrom, calib: r.calib, medals: r.medals, recent: r.recentPlays };
@@ -1779,6 +1783,16 @@ export const mount = (meta, host) => {
             byMap.set(k, t);
           }
           tops = [...byMap.values()].sort((a, b) => b.fit - a.fit).slice(0, 100);
+          // and the best maps that hold your strain or let it come down: what keeps a queue in Peak
+          const calm = new Map();
+          for (const sk of main) for (const x of (libSaved.lists[sk] || [])) {
+            if (x.strainedShare === undefined || x.strainedShare > 0.9 || queue.entries.some(q => q.beatmapId === x.id)) continue;
+            const k = `${x.id}@${x.rate}`, f = sk === 'all' ? (medals.ok ? medals.multiplier : 1) : (medals.ok ? medals.multiplier : 1) * geneOf(sk);
+            const c = calm.get(k) || { id: x.id, rate: x.rate, title: x.title, lengthSec: x.lengthSec, fit: 0, perMin: 0, role: x.strainedShare < 0.5 ? 'cools' : 'holds' };
+            c.fit += x.perMin * f; c.perMin = Math.max(c.perMin, x.perMin * f);
+            calm.set(k, c);
+          }
+          for (const c of [...calm.values()].sort((a, b) => b.fit - a.fit).slice(0, 15)) if (!tops.some(t => t.id === c.id && t.rate === c.rate)) tops.push(c);
         } else try {
           const entries = await catalogEntries();
           const byId = new Map(entries.map(e => [e.id, e]));
@@ -1804,24 +1818,26 @@ export const mount = (meta, host) => {
             if (es.length > 1) out.push({ step: { kind: 'remove', a: e.title, why: rt < avg ? `${pct(rt)} below the queue's average XP a minute` : `${pct(rt)} above the queue's average` }, entries: es.filter((_, j) => j !== i) });
             if (rt >= avg) out.push({ step: { kind: 'rep', a: e.title, from: e.repeat, to: e.repeat + 1, why: `${pct(rt)} above the queue's average XP a minute` }, entries: es.map((x, j) => (j === i ? { ...x, repeat: x.repeat + 1 } : x)) });
           });
-          for (const t of tops) if (!es.some(e => e.beatmapId === t.id)) out.push({ step: { kind: 'add', a: t.title, rate: t.rate, why: `a top performer for what this queue trains, ~${fmt(t.perMin)} XP a minute` }, entries: [...es, { beatmapId: t.id, title: t.title, lockedRate: t.rate, lockedMods: ctx.mods, repeat: 1, played: 0, lengthSec: t.lengthSec }] });
+          for (const t of tops) if (!es.some(e => e.beatmapId === t.id)) out.push({ step: { kind: 'add', a: t.title, rate: t.rate, why: t.role ? `${t.role === 'cools' ? 'lets your strain come down' : 'holds your strain'} while giving ~${fmt(t.perMin)} XP a minute` : `a top performer for what this queue trains, ~${fmt(t.perMin)} XP a minute` }, entries: [...es, { beatmapId: t.id, title: t.title, lockedRate: t.rate, lockedMods: ctx.mods, repeat: 1, played: 0, lengthSec: t.lengthSec }] });
           return out;
         };
         // one pass of single changes, then the best of them combined, up to 3
         let cur = { entries: queue.entries, steps: [], m: base.m };
         for (let step = 1; step <= 3 && alive(); step++) {
+          s.note = `Step ${step} of 3 · ${s.done} queues checked`;
           let best = null;
           for (const mv of movesOf(cur.entries)) {
             if (!alive()) break;
             const ev = await evalQ(mv.entries);
-            s.note = `${s.done} queues checked`;
+            s.note = `Step ${step} of 3 · ${s.done} queues checked`;
             if (step === 1) s.singles.push({ step: mv.step, score: ev.m.score, total: ev.m.total, focusTotal: ev.m.focusTotal, crossed: ev.m.crossed, end: ev.m.end });
-            if (!ev.m.crossed && ev.m.score > cur.m.score * 1.005 && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m };
+            const better = cur.m.crossed ? ev.m.score > cur.m.score + 0.01 : !ev.m.crossed && ev.m.score > cur.m.score * 1.005;
+            if (better && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m };
             draw();
           }
           if (!best) break;
           cur = best;
-          s.best = { steps: cur.steps, total: cur.m.total, focusTotal: cur.m.focusTotal, end: cur.m.end, entries: cur.entries };
+          if (!cur.m.crossed) s.best = { steps: cur.steps, total: cur.m.total, focusTotal: cur.m.focusTotal, end: cur.m.end, entries: cur.entries };
         }
       } catch (e) { s.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
       s.running = false;

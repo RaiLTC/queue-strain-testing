@@ -50,12 +50,12 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
   try { for (const x of (await gameRows('SELECT beatmapId, COUNT(*) AS n FROM score WHERE characterId = ? AND playedAt >= ? GROUP BY beatmapId', [row.id, num(row.memoryResetAt)])) || []) plays.set(num(x.beatmapId), num(x.n)); } catch (_) {}
   // every candidate: map@rate -> XP per skill a play (simulator scale), where it came from
   const cand = new Map();
-  const put = (mr, xp, source, exact) => { const old = cand.get(mr); if (!old || (exact && !old.exact)) cand.set(mr, { xp, source, exact }); };
+  const put = (mr, xp, source, exact, strained) => { const old = cand.get(mr); if (!old || (exact && !old.exact)) cand.set(mr, { xp, source, exact, strained }); };
   // first the shared sim cache: every official simulation anyone made, at your exact play levels
   onProgress({ phase: 'Asking the shared sim cache' });
-  try { for (const [mr, a] of await sharedPlaysFor(skills, num(row.generation) || 1, mods, minutes, entries.map(e => e.id), rates, plays)) put(mr, a.xp, 'shared cache', true); } catch (e) { logProblem('library', e); }
+  try { for (const [mr, a] of await sharedPlaysFor(skills, num(row.generation) || 1, mods, minutes, entries.map(e => e.id), rates, plays)) put(mr, a.xp, 'shared cache', true, a.strained); } catch (e) { logProblem('library', e); }
   onProgress({ phase: 'Reading the official sim\'s plays' });
-  for (const [mr, a] of await officialPlaysFor(skills, num(row.generation) || 1, mods, minutes, new Set(entries.map(e => e.id)), rates, plays, 3)) if (a.passed !== false) put(mr, a.xp, 'official sim', a.exact);
+  for (const [mr, a] of await officialPlaysFor(skills, num(row.generation) || 1, mods, minutes, new Set(entries.map(e => e.id)), rates, plays, 3)) if (a.passed !== false) put(mr, a.xp, 'official sim', a.exact, a.strained);
   for (const [mr, a] of knownMaps(owner)) if (a.fails * 2 < a.n) put(mr, Object.fromEntries(SKILLS.map(sk => [sk, num(a.xp[sk]) / Math.max(1, a.n)])), 'this add-on', true);
   // your real plays (last 14 days): what you really got, bonuses taken back out, at the levels you had then
   try {
@@ -104,7 +104,7 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
       const ranked = [...cand.keys()].map(mr => ({ mr, v: perMin(mr, cand.get(mr).xp, sk) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
       const top = ranked.slice(0, LIBRARY_TOP);
       const next = top.find(x => !cand.get(x.mr).exact && !cand.get(x.mr).confirmed);
-      if (!next || spent >= CONFIRM_CAP || stopped()) { lists[sk] = top.map(x => { const c = cand.get(x.mr), [id, rate] = x.mr.split('@').map(Number), e = byId.get(id); return { id, rate, title: e ? e.title : `Map ${id}`, stars: e ? e.stars : 0, lengthSec: e ? e.lengthSec : 0, perMin: x.v, source: c.source, sure: !!(c.exact || c.confirmed) }; }); break; }
+      if (!next || spent >= CONFIRM_CAP || stopped()) { lists[sk] = top.map(x => { const c = cand.get(x.mr), [id, rate] = x.mr.split('@').map(Number), e = byId.get(id); return { id, rate, title: e ? e.title : `Map ${id}`, stars: e ? e.stars : 0, lengthSec: e ? e.lengthSec : 0, perMin: x.v, source: c.source, sure: !!(c.exact || c.confirmed), strainedShare: c.strained !== undefined && e ? Math.max(0, Math.min(1, num(c.strained) / Math.max(0.1, e.lengthSec / rate / 60))) : undefined }; }); break; }
       onProgress({ phase: 'Confirming', skill: sk, calls });
       await confirm(next.mr);
       spent++;
