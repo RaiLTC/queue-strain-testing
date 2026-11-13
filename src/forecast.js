@@ -195,9 +195,11 @@ const officialLevels = (skills, minutes, rested = false) => {
 };
 /**
  * Every play the official sim stored that fits the character now, for the library scan: by map@rate, its XP per
- * skill (in the simulator's terms) and strain. A record counts for the nine skills other than Speed Jam and Memory
- * only when all nine levels in its key equal the character's (play levels with no fatigue: at Peak); Speed Jam's
- * and Memory's XP count from a record whose own two levels equal the character's. Same sim version, under 7 days.
+ * skill (in the simulator's terms) and strain. For each map@rate the closest record is taken (play levels with no
+ * fatigue: at Peak). It counts when the map's KEY skills (the ones getting 5%+ of its XP) are within 2 levels of
+ * the character's: the XP formula barely moves past level 100, and skills that win almost no notes on a map hardly
+ * change it. Speed Jam's and Memory's XP come from a record whose own two levels are within 2. `exact` when every
+ * level is equal. Same sim version, under 7 days.
  */
 export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds, rates, playsOf) => {
   const out = new Map();
@@ -207,7 +209,8 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
   const modsKey = MOD_ORDER.filter(m => (mods || []).includes(m)).join(',');
   const SJM = [GAME_SKILLS.indexOf('speedjam'), GAME_SKILLS.indexOf('memory')];
   const rateSet = new Set(rates.map(r => String(r)));
-  const forNine = new Map(), forSjm = new Map();
+  const forNine = new Map(), forSjm = new Map(), nineDist = new Map(), sjmDist = new Map();
+  const diff = (lv, i) => Math.abs(Number(lv[i]) - Number(mine[i]));
   for (const key of index) {
     const parts = key.split('|');
     if (parts.length < 5 || parts[2] !== String(generation >= 2 ? 1 : 0)) continue;
@@ -216,8 +219,11 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
     if (Number(parts[4]) !== (playsOf.get(Number(id)) || 0)) continue;
     const lv = parts[1].split(',');
     const mr = `${id}@${rate}`;
-    if (lv.every((v, i) => SJM.includes(i) || v === mine[i])) forNine.set(mr, key);
-    if (SJM.every(i => lv[i] === mine[i])) forSjm.set(mr, key);
+    // a first cut from the key alone (no skill more than 10 levels off), the closest record kept per map@rate
+    const nine = lv.map((v, i) => (SJM.includes(i) ? 0 : diff(lv, i)));
+    if (Math.max(...nine) <= 10) { const d = nine.reduce((t, v) => t + v, 0); if (!nineDist.has(mr) || d < nineDist.get(mr)) { nineDist.set(mr, d); forNine.set(mr, key); } }
+    const sd = Math.max(...SJM.map(i => diff(lv, i)));
+    if (sd <= 2 && (!sjmDist.has(mr) || sd < sjmDist.get(mr))) { sjmDist.set(mr, sd); forSjm.set(mr, key); }
   }
   const want = [...new Set([...forNine.values(), ...forSjm.values()])];
   const recs = new Map();
@@ -233,6 +239,10 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
   for (const [mr, key] of forNine) {
     const rec = recs.get(key);
     if (!ok(rec)) continue;
+    // its key skills (5%+ of its XP) must be within 2 levels of yours
+    const lv = key.split('|')[1].split(','), tot = GAME_SKILLS.filter(sk => sk !== 'speedjam' && sk !== 'memory').reduce((t, sk) => t + mean(rec, sk), 0);
+    if (!(tot > 0)) continue;
+    if (GAME_SKILLS.some((sk, i) => !SJM.includes(i) && mean(rec, sk) / tot >= 0.05 && diff(lv, i) > 2)) continue;
     const sj = forSjm.get(mr) && recs.get(forSjm.get(mr));
     const xp = {};
     for (const sk of GAME_SKILLS) {
@@ -240,7 +250,8 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
       xp[sk] = src ? mean(src, sk) * ez * (sk === 'accuracy' && hr ? 1.1 : 1) : 0;
     }
     const passed = rec.samples.some(x => x && x.passed !== false);
-    out.set(mr, { xp, passed, strained: rec.samples.reduce((t, x) => t + num(x && x.strained), 0) / rec.samples.length });
+    const exact = nineDist.get(mr) === 0 && sjmDist.get(mr) === 0;
+    out.set(mr, { xp, passed, exact, strained: rec.samples.reduce((t, x) => t + num(x && x.strained), 0) / rec.samples.length });
   }
   return out;
 };

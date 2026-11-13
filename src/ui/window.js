@@ -1441,8 +1441,8 @@ export const mount = (meta, host) => {
               <span class="qs-dim" style="margin-left:auto;">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${SKILLS.map(sk => `<option value="${sk}"${sk === libSkill ? ' selected' : ''}>${SKILL_NAMES[sk]}</option>`).join('')}</select>` : ''}
           </div>
           ${libSaved ? (() => { const L = listsOf(libSaved.results)[libSkill]; const f = (medals.ok ? medals.multiplier : 1) * geneOf(libSkill);
-            const col = (title, rows) => `<div style="flex:1; min-width:220px;"><div class="qs-dim" style="margin:6px 0 2px;">${title}</div>${rows.length ? `<ol style="margin:0 0 0 18px; padding:0;">${rows.map(x => `<li title="${esc(x.title)} · ${x.rate}× · ${x.stars.toFixed(2)}★ · strains ${Math.round(x.strained * 100)}% of its length">${esc(x.title)} <span class="qs-dim">${x.rate}×</span> <b>${fmt(x.perMin[libSkill] * f)}</b><span class="qs-dim">/min</span></li>`).join('')}</ol>` : '<div class="qs-dim">None yet.</div>'}</div>`;
-            return `<div style="display:flex; gap:12px; flex-wrap:wrap;">${col('Top 10', L.top)}${col('Top cooldowns (strain falls)', L.cools)}${col('Top warmers (strain rises)', L.warms)}</div>`; })() : ''}
+            const col = (title, rows) => `<div style="flex:1; min-width:220px;"><div class="qs-dim" style="margin:6px 0 2px;">${title}</div>${rows.length ? `<ol style="margin:0 0 0 22px; padding:0; max-height:260px; overflow-y:auto;">${rows.map(x => `<li title="${esc(x.title)} · ${x.rate}× · ${x.stars.toFixed(2)}★ · strains ${Math.round(x.strained * 100)}% of its length">${esc(x.title)} <span class="qs-dim">${x.rate}×</span> <b>${x.approx ? '≈' : ''}${fmt(x.perMin[libSkill] * f)}</b><span class="qs-dim">/min</span></li>`).join('')}</ol>` : '<div class="qs-dim">None yet.</div>'}</div>`;
+            return `<div style="display:flex; gap:12px; flex-wrap:wrap;">${col('Top 100', L.top)}${col('Top cooldowns (strain falls)', L.cools)}${col('Top warmers (strain rises)', L.warms)}</div>`; })() : ''}
         </div>
 `;
     const suggestTab = `<div class="qs-card">
@@ -1834,7 +1834,7 @@ export const mount = (meta, host) => {
         if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId), { easy: 3 }); }
         if (useLibrary && libSaved && libSaved.results.length) {
           // the saved library scan: your goal's top performers, and the best that cool down and warm up
-          const L = listsOf(libSaved.results), sks = goal === 'all' ? SKILLS : [goal], take = goal === 'all' ? [3, 1, 1] : [10, 3, 3];
+          const L = listsOf(libSaved.results), sks = goal === 'all' ? SKILLS : [goal], n0 = { quick: 5, balanced: 12, thorough: 30 }[speed], take = goal === 'all' ? [Math.ceil(n0 / 4), 1, 1] : [n0, Math.ceil(n0 / 4), Math.ceil(n0 / 4)];
           const picked = new Map();
           for (const sk of sks) for (const [list, nTake] of [[L[sk].top, take[0]], [L[sk].cools, take[1]], [L[sk].warms, take[2]]]) for (const x of list.slice(0, nTake)) {
             if (queue.entries.some(e => e.beatmapId === x.id) || picked.has(`${x.id}@${x.rate}`) || x.rate < rMin - 1e-9 || x.rate > rMax + 1e-9) continue;
@@ -1899,7 +1899,7 @@ export const mount = (meta, host) => {
       } catch (e) { s.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
       s.running = false;
       s.wall = performance.now() - s.startedAt;
-      if (lastResult[3] === r) renderResult(...lastResult);
+      if (lastResult[3] === r) { renderResult(...lastResult); centerVertically(); }
     };
     const diagCopy = outEl.querySelector('.qs-diag-copy');
     if (diagCopy) {

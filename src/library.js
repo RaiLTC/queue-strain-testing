@@ -9,7 +9,7 @@ import { CALL_SPACING_MS, RETRY_WAITS_MS, cached, initCache, isTransient, offici
 import { STRAIN_CAP } from './rules/fatigue.js';
 
 const DB = 'queue-strain', STORE = 'library';
-const TOP = 10;
+const TOP = 100;
 const openDb = () => new Promise((ok, no) => {
   const q = indexedDB.open(DB, 1);
   q.onupgradeneeded = () => { if (!q.result.objectStoreNames.contains(STORE)) q.result.createObjectStore(STORE); };
@@ -41,7 +41,7 @@ const pruneLibrary = async (row) => {
 /** A play's role by how it moves strain: the share of its length it strains you for. */
 export const roleOf = (strainedShare) => (strainedShare < 0.5 ? 'cools' : strainedShare > 0.9 ? 'warms' : 'holds');
 
-/** The lists from the results: per skill, the top 10 by XP a minute, and the top 10 of those that cool and warm. */
+/** The lists from the results: per skill, the top 100 by XP a minute, and the top 100 of those that cool and warm. */
 export const listsOf = (results) => {
   const lists = {};
   for (const sk of SKILLS) {
@@ -81,17 +81,22 @@ export async function scanLibrary({ api, row, rates, mods = [], minutes, onProgr
     const mins = Math.max(0.1, e.lengthSec / rate / 60);
     const perMin = Object.fromEntries(SKILLS.map(sk => [sk, a.passed === false ? 0 : num(a.xp[sk]) / mins]));
     const strained = Math.max(0, Math.min(1, num(a.strained) / mins));
-    results.push({ id, title: e.title, stars: e.stars, rate, minutes: mins, perMin, passed: a.passed !== false, role: roleOf(strained), strained, official: true });
+    results.push({ id, title: e.title, stars: e.stars, rate, minutes: mins, perMin, passed: a.passed !== false, role: roleOf(strained), strained, official: true, approx: !a.exact });
     done.add(mr);
     fromOfficial++;
   }
+  // the near matches that made a top list get played again at your exact levels, first: exact numbers where it
+  // matters, near-free ones everywhere else
+  const redo = new Set();
+  { const l0 = listsOf(results); for (const sk of SKILLS) for (const list of [l0[sk].top, l0[sk].cools, l0[sk].warms]) for (const x of list) if (x.approx) redo.add(`${x.id}@${x.rate}`); }
+  for (let i = results.length - 1; i >= 0; i--) if (redo.has(`${results[i].id}@${results[i].rate}`)) { done.delete(`${results[i].id}@${results[i].rate}`); results.splice(i, 1); }
   // then every map x rate still missing, strongest ceiling first
   const work = [];
   for (const e of entries) {
     for (const rate of rates) {
       if (done.has(`${e.id}@${rate}`)) continue;
       const ceil = Object.fromEntries(SKILLS.map(sk => [sk, xpCeiling(row, e.id, rate, sk, mods, plays.has(e.id)) / Math.max(0.1, e.lengthSec / rate / 60)]));
-      work.push({ e, rate, ceil, best: Math.max(...Object.values(ceil)) });
+      work.push({ e, rate, ceil, best: redo.has(`${e.id}@${rate}`) ? Infinity : Math.max(...Object.values(ceil)) });
     }
   }
   work.sort((a, b) => b.best - a.best);
@@ -103,7 +108,7 @@ export async function scanLibrary({ api, row, rates, mods = [], minutes, onProgr
     if (stopped()) break;
     n++;
     // provably can't reach any list of any skill: skip it
-    if (SKILLS.every(sk => w.ceil[sk] <= fl[sk])) { skipped++; if (n % 50 === 0) onProgress({ done: n, total: work.length, skipped, calls }); continue; }
+    if (w.best !== Infinity && SKILLS.every(sk => w.ceil[sk] <= fl[sk])) { skipped++; if (n % 50 === 0) onProgress({ done: n, total: work.length, skipped, calls }); continue; }
     const p = plays.get(w.e.id) || 0;
     const key = `${w.e.id}|${w.rate}|${[...mods].sort().join('')}|${bucket}|${p}`;
     let answer = cached(owner, key);
