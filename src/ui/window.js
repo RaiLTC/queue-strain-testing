@@ -1660,8 +1660,8 @@ export const mount = (meta, host) => {
       const keyOf = (es) => es.map(e => `${e.beatmapId}@${e.lockedRate ?? ''}x${e.repeat}`).join('|');
       /** A forecast's worth for the goal, and what explains it: the share of the time in the sweet spot and past
        *  the XP cut, and the average mindblock. */
-      /** A queue's worth: its XP over the look-ahead, ranked down for time outside Peak (Pushing a little, past
-       *  the XP cut a lot, below Peak once warmed up some), for ending outside Peak, and a little for heavy mindblock late
+      /** A queue's worth: its XP over the look-ahead, ranked down for time past the XP cut (a lot) or
+       *  below Peak once warmed up (some), for ending there, and a little for heavy mindblock late
        *  on (the XP itself already has mindblock taken off, so a repeat pays for it there). */
       const measure = (res) => {
         let xp = 0, min = 0, peak = 0, cut = 0, block = 0, off = 0, offMin = 0, lateBlock = 0, lateN = 0, warm = false;
@@ -1674,11 +1674,11 @@ export const mount = (meta, host) => {
           block += num(p.block ?? 1) * len;
           // the warm-up is excused: off-Peak time counts from the first time Peak is reached, or after an hour
           if (!warm && (p.bar >= BAR_ZONES[0] || p.start >= 3600)) warm = true;
-          if (warm) { offMin += len; off += len * (p.bar >= XP_CUT ? 1 : p.bar >= BAR_ZONES[1] ? 0.3 : p.bar < BAR_ZONES[0] ? 0.5 : 0); }
+          if (warm) { offMin += len; off += len * (p.bar >= XP_CUT ? 1 : p.bar < BAR_ZONES[0] ? 0.5 : 0); }
           if (p.start >= H * 3600 * 0.75) { lateBlock += num(p.block ?? 1); lateN++; }
         }
         const last = res.samples[res.samples.length - 1] || {};
-        const endBar = num(last.bar), endF = endBar >= XP_CUT ? 0.6 : endBar >= BAR_ZONES[1] ? 0.9 : endBar < BAR_ZONES[0] ? 0.85 : 1;
+        const endBar = num(last.bar), endF = endBar >= XP_CUT ? 0.6 : endBar < BAR_ZONES[0] ? 0.85 : 1;
         const blockEnd = lateN ? lateBlock / lateN : 1;
         const rank = (xp / H) * (1 - 0.5 * (offMin ? off / offMin : 0)) * endF * (0.9 + 0.1 * blockEnd);
         return { total: xp, score: rank, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
