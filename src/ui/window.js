@@ -1667,7 +1667,8 @@ export const mount = (meta, host) => {
         const k = `${exact ? 'E' : 'Q'}${keyOf(entries)}`;
         if (!seen.has(k)) {
           const t0 = performance.now();
-          const res = await forecast({ ...queue, entries }, { ...ctx, quick: !exact }, () => {}, tok);
+          const reuse = { memoryLocal: r.memoryLocal, memory: r.memory, triesFrom: r.triesFrom, calib: r.calib, medals: r.medals, recent: r.recentPlays };
+          const res = await forecast({ ...queue, entries }, { ...ctx, quick: !exact, reuse }, () => {}, tok);
           const T = s.timing, ft = res.timing || {};
           T.total += performance.now() - t0; T.forecasts++;
           for (const f of ['exact', 'indexMs', 'indexBuilds', 'nearMs', 'near', 'calls', 'simMs']) T[f] += num(ft[f]);

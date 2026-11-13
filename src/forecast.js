@@ -306,11 +306,15 @@ export async function forecast(queue, ctx, onProgress, token) {
 
   const mapIds = [...new Set(queue.entries.map(e => e.beatmapId))];
   const genetics = geneticsXpOf(ctx.geneSource ? ctx.geneSource.genetics : row.geneticsJson);
+  // a what-if (Suggestions) reuses what the last scan read: Tries, calibration, medals and the day's plays are the
+  // same for every variant of the queue, and reading them again (server requests, database reads) is what's slow
+  const reuse = ctx.reuse || null;
   // Tries: the server's when it answers, else counted from this computer's plays as the game does for guests
-  const memoryLocal = await memoryPlays(row, mapIds);
-  const fromServer = await serverTries(row, mapIds);
+  const memoryLocal = reuse && reuse.memoryLocal ? reuse.memoryLocal : await memoryPlays(row, mapIds);
+  const fromServer = reuse && reuse.memory ? null : await serverTries(row, mapIds);
   const memory = {}, triesFrom = {};
   for (const id of mapIds) {
+    if (reuse && reuse.memory && reuse.memory[id] !== undefined) { memory[id] = reuse.memory[id]; triesFrom[id] = (reuse.triesFrom || {})[id] || 'local'; continue; }
     const server = fromServer ? fromServer[id] : undefined;
     memory[id] = server ?? memoryLocal[id];
     triesFrom[id] = server !== undefined ? 'server' : 'local';
@@ -433,7 +437,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   const simulate = async (...args) => (await simulateWith(...args)).answer;
 
   // the XP that levels the character up is the real one: calibrate first, on the character's real plays
-  const calib = await calibrate(row, queue, {
+  const calib = reuse && reuse.calib ? reuse.calib : await calibrate(row, queue, {
     startMinutes,
     rate,
     // a real play's Tries then: this computer's count then, moved by how far the server's is from it now
@@ -451,12 +455,14 @@ export async function forecast(queue, ctx, onProgress, token) {
     stopped: () => runToken !== scanToken,
   });
   // medals from the server; when it can't be reached, each skill's bonus as learned from the real plays
-  const medals = await medalsOf(row);
+  const medals = reuse && reuse.medals ? reuse.medals : await medalsOf(row);
   const bonusOf = (sk) => (medals.ok ? medals.multiplier : calib.factors[sk] > 0 ? calib.factors[sk] : 1) * genetics[sk].total;
   const gainOf = (answer, sk, block) => num(answer.xp && answer.xp[sk]) * (MINDBLOCK.has(sk) ? block : 1) * bonusOf(sk);
   // mindblock's count: the last 50 plays within a day, then the forecast's own plays
   const nowMs = Date.now();
-  const recent = (await playsSince(row, nowMs - DAY_MS)).slice(-RECENT_LIMIT);
+  // a copy each time: the forecast adds its own plays to it as it goes
+  const recent = reuse && reuse.recent ? reuse.recent.slice() : (await playsSince(row, nowMs - DAY_MS)).slice(-RECENT_LIMIT);
+  const recentAtStart = recent.slice();
   const recentStart = recent.length;
   const recentByMap = Object.fromEntries(mapIds.map(id => [id, recent.filter(x => x.id === id).length]));
 
@@ -516,6 +522,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   owner = startOwner;
   return {
     timing: { ...timing, simMs: simStats.ms },
+    recentPlays: recentAtStart,
     plays, samples, knots, loopSec, loopDrift, loopPlays: loop.length, loopStart: loopFrom ? loopFrom.plays : 0, memory, memoryLocal, triesFrom, calib, medals, genetics, recentStart, recentByMap, simStats, runs,
     simulate, counts: () => ({ calls, fromCache }), useToken: (t) => { runToken = t; },
     /** A quick update keeps borrowing stored answers through the Speed Jam / Memory curves, then stops. */
