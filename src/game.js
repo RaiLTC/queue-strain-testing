@@ -61,7 +61,7 @@ export async function mapNames() {
       const walk = (v) => {
         if (!v || typeof v !== 'object') return;
         if (Array.isArray(v)) { v.forEach(walk); return; }
-        if (Array.isArray(v.versions) && v.title) for (const d of v.versions) if (d && d.id) { out[d.id] = `${v.artist ? `${v.artist} - ` : ''}${v.title}${d.version ? ` [${d.version}]` : ''}`; catalogLen[d.id] = num(d.total_length) / 1000; }
+        if (Array.isArray(v.versions) && v.title) for (const d of v.versions) if (d && d.id) { out[d.id] = `${v.artist ? `${v.artist} - ` : ''}${v.title}${d.version ? ` [${d.version}]` : ''}`; catalogLen[d.id] = num(d.total_length) / 1000; catalogStars[d.id] = num(d.difficulty); }
         for (const k in v) if (k !== 'versions') walk(v[k]);
       };
       walk(await res.json());
@@ -72,10 +72,12 @@ export async function mapNames() {
 }
 /** Each map's length in seconds at 1×, from the same catalog. */
 const catalogLen = {};
+/** And its star rating. */
+const catalogStars = {};
 /** Maps from the player's own recent history (the last `days`) that aren't in the queue, as queue entries ready
  *  to forecast: played at the rate and mods last used on them, ranked by the real XP a minute they earned then
  *  (from the game's XP log, no simulator call). The best `top` of them. */
-export async function historyMaps(row, skipIds, { days = 7, top = 5 } = {}) {
+export async function historyMaps(row, skipIds, { days = 7, top = 5, easy = 0 } = {}) {
   const names = await mapNames();
   const skip = new Set(skipIds.map(Number));
   let rows = [];
@@ -93,12 +95,16 @@ export async function historyMaps(row, skipIds, { days = 7, top = 5 } = {}) {
     if ((num(x.rate) || 1) === m.rate && String(x.mods || '') === String(m.mods || '')) { m.xp += xp; m.n++; }
     byMap.set(id, m);
   }
-  return [...byMap.values()].filter(m => m.n > 0 && m.xp > 0).map(m => {
+  const all = [...byMap.values()].filter(m => m.n > 0 && m.xp > 0).map(m => {
     const lengthSec = catalogLen[m.id];
     const perMin = (m.xp / m.n) / Math.max(0.1, lengthSec / m.rate / 60);
     const mods = (Array.isArray(m.mods) ? m.mods : String(m.mods || '').split(',')).map(v => String(v).trim()).filter(Boolean);
-    return { beatmapId: m.id, title: names[m.id] || `Map ${m.id}`, lockedRate: m.rate, lockedMods: mods, repeat: 1, played: 0, lengthSec, history: { perMin, plays: m.n } };
-  }).sort((a, b) => b.history.perMin - a.history.perMin).slice(0, top);
+    return { beatmapId: m.id, title: names[m.id] || `Map ${m.id}`, lockedRate: m.rate, lockedMods: mods, repeat: 1, played: 0, lengthSec, history: { perMin, plays: m.n, stars: catalogStars[m.id] || 0 } };
+  });
+  // the best by XP a minute, and (to cool down after a push) the easiest by star rating
+  const best = [...all].sort((a, b) => b.history.perMin - a.history.perMin).slice(0, top);
+  const cool = all.filter(e => !best.includes(e) && e.history.stars > 0).sort((a, b) => a.history.stars - b.history.stars).slice(0, easy).map(e => ({ ...e, history: { ...e.history, easy: true } }));
+  return [...best, ...cool];
 }
 export let medalsKept = null;
 /** Diagnostics: the add-on's last 20 problems this session (failed calls, retries, servers that didn't answer). */

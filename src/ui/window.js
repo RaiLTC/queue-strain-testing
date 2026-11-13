@@ -1395,7 +1395,7 @@ export const mount = (meta, host) => {
     const sgXpName = (q) => `${q.goal === 'all' ? 'XP' : `${SKILL_NAMES[q.goal]} XP`} in ${q.hours}h`;
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
     const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
-    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
     /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
     const sgEnds = (end) => {
       if (!end || !sg) return '';
@@ -1414,11 +1414,11 @@ export const mount = (meta, host) => {
       <div class="qs-tablewrap" style="margin-top:4px;"><table>
         <thead><tr><th>Change</th><th class="n">${sgXpName(sg)}</th><th class="n">vs now</th><th>Why</th><th title="Your strain now → after the next ${sg.hours} hours">Strain</th></tr></thead><tbody>
         <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.baseTotal)}</td><td class="n qs-dim">–</td><td></td><td>${sgEnds(sg.baseEnd)}</td></tr>
-        ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${v.score > sg.base * 1.002 ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.total)}</td><td class="n">${sgPct(v.total, sg.baseTotal)}</td><td class="qs-dim">${esc(v.why)}</td><td>${sgEnds(v.end)}</td></tr>`).join('')}
+        ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${!v.crossed && (sg.baseCrossed || v.score > sg.base * 1.002) ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.total)}</td><td class="n">${sgPct(v.total, sg.baseTotal)}</td><td class="qs-dim">${esc(v.why)}</td><td>${sgEnds(v.end)}</td></tr>`).join('')}
       </tbody></table></div>` : '';
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
-        <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more while keeping you in the Sweet Spot and out of heavy mindblock. Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
+        <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more without going past the XP cut. Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
         <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
           <span class="qs-dim">Speed</span>
           <select id="qs-sg-speed" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''} title="Quick: each change on its own. Balanced: the best combination, a step at a time. Thorough: more kinds of change, three queues kept at each step, the best checked with the simulator (takes minutes).">${[['quick', 'Quick'], ['balanced', 'Balanced'], ['thorough', 'Thorough']].map(([v, l]) => `<option value="${v}"${v === sgSpeed ? ' selected' : ''}>${l}</option>`).join('')}</select>
@@ -1431,6 +1431,7 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past the XP cut. The suggestions below keep you under it.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
         ${sgBest}
         ${sgSingles}
@@ -1660,11 +1661,11 @@ export const mount = (meta, host) => {
       const keyOf = (es) => es.map(e => `${e.beatmapId}@${e.lockedRate ?? ''}x${e.repeat}`).join('|');
       /** A forecast's worth for the goal, and what explains it: the share of the time in the sweet spot and past
        *  the XP cut, and the average mindblock. */
-      /** A queue's worth: its XP over the look-ahead, ranked down for time past the XP cut (a lot) or
-       *  below Peak once warmed up (some), for ending there, and a little for heavy mindblock late
-       *  on (the XP itself already has mindblock taken off, so a repeat pays for it there). */
+      /** A queue's worth: its XP over the look-ahead (the simulator already plays each map at the strain you're at,
+       *  so Warming Up and Pushing cost what they really cost), a little less for heavy mindblock late on. The XP cut
+       *  is the one hard line: a queue that goes past it (once under it) is out. */
       const measure = (res) => {
-        let xp = 0, min = 0, peak = 0, cut = 0, block = 0, off = 0, offMin = 0, lateBlock = 0, lateN = 0, warm = false;
+        let xp = 0, min = 0, peak = 0, cut = 0, block = 0, lateBlock = 0, lateN = 0, under = false, crossed = false;
         for (const p of res.plays) {
           const len = num(p.lengthMin) || 1;
           xp += goal === 'all' ? totalOf(p) : xpOf(p, goal);
@@ -1672,19 +1673,19 @@ export const mount = (meta, host) => {
           if (p.bar >= BAR_ZONES[0] && p.bar < BAR_ZONES[1]) peak += len;
           if (p.bar >= XP_CUT) cut += len;
           block += num(p.block ?? 1) * len;
-          // the warm-up is excused: off-Peak time counts from the first time Peak is reached, or after an hour
-          if (!warm && (p.bar >= BAR_ZONES[0] || p.start >= 3600)) warm = true;
-          if (warm) { offMin += len; off += len * (p.bar >= XP_CUT ? 1 : p.bar < BAR_ZONES[0] ? 0.5 : 0); }
+          // starting past the cut you may cool down first; once under it, going past it again rules the queue out
+          if (p.bar < XP_CUT) under = true;
+          else if (under) crossed = true;
           if (p.start >= H * 3600 * 0.75) { lateBlock += num(p.block ?? 1); lateN++; }
         }
         const last = res.samples[res.samples.length - 1] || {};
-        const endBar = num(last.bar), endF = endBar >= XP_CUT ? 0.6 : endBar < BAR_ZONES[0] ? 0.85 : 1;
         const blockEnd = lateN ? lateBlock / lateN : 1;
-        const rank = (xp / H) * (1 - 0.5 * (offMin ? off / offMin : 0)) * endF * (0.9 + 0.1 * blockEnd);
-        return { total: xp, score: rank, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
+        // a queue past the cut ranks below every one that isn't, the less time past it the better
+        const rank = crossed ? -1 - (min ? cut / min : 0) : (xp / H) * (0.9 + 0.1 * blockEnd);
+        return { total: xp, score: rank, crossed, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const pc = (v) => `${Math.round(v * 100)}%`;
-      const whyOf = (m, bm) => (bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
+      const whyOf = (m, bm, c, bc) => (c && !bc ? 'Goes past the XP cut' : bc && !c ? 'Stays under the XP cut' : bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
         : m.peak - bm.peak >= 0.03 ? `More time in the sweet spot (${pc(bm.peak)} → ${pc(m.peak)})`
         : m.block - bm.block >= 0.02 ? `Less mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
         : m.cut - bm.cut >= 0.03 ? `More time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
@@ -1735,7 +1736,7 @@ export const mount = (meta, host) => {
           }
         }
         // a map from your history, added at the end with one play
-        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId)) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin }, entries: [...es, h] });
+        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId)) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin, easy: !!h.history.easy, stars: h.history.stars }, entries: [...es, h] });
         return out;
       };
       let extra = [];
@@ -1748,12 +1749,13 @@ export const mount = (meta, host) => {
         }
       } catch (_) {}
       try {
-        if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId)); }
+        if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId), { easy: 3 }); }
         const baseKey = keyOf(queue.entries);
         const base = await evalQ(queue.entries, false);
         s.base = base.score;
         s.baseEnd = base.end;
         s.baseTotal = base.total;
+        s.baseCrossed = base.crossed;
         s.startBar = num((r.samples[0] || {}).bar);
         let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
         const all = [];
@@ -1764,13 +1766,13 @@ export const mount = (meta, host) => {
             const key = keyOf(mv.entries);
             if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
             const ev = await evalQ(mv.entries, false);
-            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, parent: f.score, m: ev.m, end: ev.end });
+            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, crossed: ev.crossed, parent: f.score, m: ev.m, end: ev.end });
             s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
-            if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, total: c.total, why: whyOf(c.m, base.m), end: c.end }));
+            if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, total: c.total, crossed: c.crossed, why: whyOf(c.m, base.m, c.crossed, base.crossed), end: c.end }));
             draw();
           }
           all.push(...cands);
-          s.best = all.filter(c => c.score > base.score * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, total: c.total, entries: c.entries, end: c.end }));
+          s.best = all.filter(c => !c.crossed && (base.crossed || c.score > base.score * 1.002)).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, total: c.total, entries: c.entries, end: c.end }));
           // only what beats the queue it came from goes on to the next step
           frontier = cands.filter(c => c.score > c.parent * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.width);
           if (!frontier.length) break;
