@@ -213,7 +213,7 @@ export const logRead = () => {
   try { return localStorage.getItem(LOG_READ_KEY) === logId(); } catch (_) { return false; }
 };
 export const changelogHtml = () => {
-  const read = logRead();
+  const read = logRead() || CHANGELOG.notify === false;
   return `<span class="qs-notice qs-log ${read ? 'none' : 'new'}">
     <button type="button" aria-label="Changelog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M3.5 6h.01"/><path d="M3.5 12h.01"/><path d="M3.5 18h.01"/></svg></button>
     <span class="qs-notice-pop"><b>What's new</b>${esc(CHANGELOG.text || '')}${read
@@ -230,6 +230,7 @@ export const hotfixHtml = () => {
   if (!HOTFIXES.text) return '';
   let read = false;
   try { read = localStorage.getItem(HOTFIX_READ_KEY) === hotfixId(); } catch (_) {}
+  if (HOTFIXES.notify === false) read = true;
   return `<span class="qs-notice qs-hotfix ${read ? 'none' : 'new'}">
     <button type="button" aria-label="Hotfixes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
     <span class="qs-notice-pop"><b>Hotfixes</b>${esc(HOTFIXES.text)}${read

@@ -11,54 +11,41 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.568';
-export const VERSION_ID = '2026-11-13 13H27M';
+export const VERSION = '1.4.0';
+export const VERSION_ID = '2026-11-13 13H37M';
 
 // none / info / urgent
 export const NOTICE = {
-  // the notice hasn't changed since 1.3.2: its own id, so players who read it don't see it again
-  id: '2026-11-11 06H37M',
+  // its own id: a new one shows the notice again to players who read the old one
+  id: '2026-11-13 1.4.0',
   mode: 'info',
-  text: `The numbers look right so far. Speed Jam and Memory haven't been checked yet: that's next.\nFound something off? Message me (Rai) in the in-game chat if online, or in the official oss!idle Discord`,
+  text: `Scanning can make the game lag a little while it runs.\nSuggestions is at an early stage: it should get better with time.\nFound something off? Message me (Rai) in the in-game chat if online, or in the official oss!idle Discord`,
 };
 
-// the last big update. Kept exactly as released (id and text), so players who read it don't see it light up again
+// the last big update. Kept exactly as released (id and text), so players who read it don't see it light up again.
+// notify: false keeps it from glowing even when it changed
 export const CHANGELOG = {
-  id: '2026-11-12 05H27M',
-  text: `v1.3.5 · 12 Nov 2026
-• Strain bar shows where you're headed, with a time slider
-• XP loss shown past the XP cut
-• Overall level on top, rebirth time in words
-• Clearer times and colours
-• Smarter window behaviour, with new Window options
+  id: '2026-11-13 1.4.0',
+  notify: true,
+  text: `v1.4.0 · 13 Nov 2026
+• New Suggestions tab: finds a better queue by dropping, repeating, swapping and adding maps
+• Map library: the best maps for each skill, built from Suggestions
+• Faster scans: uses the shared sim cache first
+• Levels: Overall display, your routes, next upgrades on the bar
+• Overview: the top 3 skills this queue trains
+• "Sweet Spot" is now "Peak"
+• Window works better around the queue, chat and menus
 • Bunch of fixes`,
 };
 
 // small fixes since the last big update: the wrench button, glowing orange until read. Empty text hides it;
-// a new id (or text) lights it up again.
+// a new id (or text) lights it up again, unless notify is false.
 // Which one to update: a #.#.# release (1.3.5, 1.3.6) writes CHANGELOG and empties HOTFIXES; an x.x.x# release
 // (1.3.51, 1.3.58) only adds to HOTFIXES and leaves CHANGELOG exactly as it is
 export const HOTFIXES = {
   id: VERSION_ID,
-  text: `v${VERSION} · 12 Nov 2026
-• New Suggestions tab: drop dead-weight maps, repeat your best ones
-• Uses the shared sim cache before simulating: faster scans
-• Suggestions: swaps maps, trims repeats, and looks further for the best queue
-• Levels: follow your routes from Gemini's level up sim
-• Levels: Overall display, next upgrades on the bar
-• Levels update by themselves after an upgrade
-• Overview: the top 3 skills this queue trains
-• Strain bar: slider starts off, tidier arrow and labels
-• Hour marks on the strain arrow now sit in the right place
-• Hotfixes now have their own button
-• Window stays solid while you edit the queue next to it
-• Clicks pass through to the mods menu, options and Add-ons
-• Chat shows through the window when you point at it, and scrolls
-• Esc closes an open menu or the chat first
-• Debug: Copy Diagnostics, map names in the console
-• Fixed Speed Jam / Memory strain, the Tries count and a stuck console
-• Fixed the window fading when opened under the mouse
-• Fixed the window moving when opening its options`,
+  notify: true,
+  text: '',
 };
 
 // ---------------------------------------------------------------------

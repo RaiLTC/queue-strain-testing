@@ -327,6 +327,19 @@ export const mount = (meta, host) => {
     const r = root.getBoundingClientRect();
     root.style.top = `${Math.max(0, Math.round((innerHeight - r.height) / 2))}px`;
   };
+  let settledH = 0, settleTimer = 0;
+  try {
+    new ResizeObserver(() => {
+      const h = root.offsetHeight;
+      if (!h || Math.abs(h - settledH) < 2) return;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        try { const sg = lastResult && lastResult[3] && lastResult[3].suggest; if ((sg && sg.running) || libRun) return; } catch (_) {}
+        settledH = root.offsetHeight;
+        centerVertically();
+      }, 250);
+    }).observe(root);
+  } catch (_) {}
   /** While the game's Edit Queue is open (the dock moves to the left column, without its source line), the window
    *  moves out of its way to the right and is centred top to bottom. It goes back to where it was when Edit Queue
    *  closes, unless the player moved it in between. */
