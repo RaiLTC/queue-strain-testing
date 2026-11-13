@@ -175,7 +175,7 @@ export const graphHtml = (samples, endSec) => {
     <rect x="0" y="${y(BAR_ZONES[1])}" width="${W}" height="${y(BAR_ZONES[0]) - y(BAR_ZONES[1])}" fill="rgba(232,193,71,.16)"/>
     <rect x="0" y="0" width="${W}" height="${y(BAR_ZONES[2])}" fill="rgba(192,132,252,.10)"/>
     ${hoursMarks.join('')}
-    <text x="3" y="${y(BAR_ZONES[1]) + 10}" fill="#e8c147" font-size="9" opacity=".8">sweet spot</text>
+    <text x="3" y="${y(BAR_ZONES[1]) + 10}" fill="#e8c147" font-size="9" opacity=".8">peak</text>
     <line x1="0" x2="${W}" y1="${y(XP_CUT)}" y2="${y(XP_CUT)}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="4 3"/>
     <text x="3" y="${y(XP_CUT) - 3}" fill="#f87171" font-size="9">300 min: XP cut</text>
     <polyline points="${pts}" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>

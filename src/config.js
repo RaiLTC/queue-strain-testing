@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.551';
-export const VERSION_ID = '2026-11-13 06H45M';
+export const VERSION = '1.3.552';
+export const VERSION_ID = '2026-11-13 06H57M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -120,9 +120,9 @@ export const TEXT = {
   tabs: { overview: 'Overview', xp: 'XP', sv: 'Speed Jam / Memory', levels: 'Levels', suggest: 'Suggestions', debug: 'Debug' },
   stages: {
     cold: ['Cold', 'Play harder maps to warm up.'],
-    warming: ['Warming Up', 'Play harder maps to reach the sweet spot.'],
-    peak: ['Sweet Spot', 'Your physical skills are at their best.'],
-    pushing: ['Past Sweet Spot', 'Play easier maps to come back to it.'],
+    warming: ['Warming Up', 'Play harder maps to reach Peak.'],
+    peak: ['Peak', 'Your physical skills are at their best.'],
+    pushing: ['Past Peak', 'Play easier maps to come back to it.'],
     fatigued: ['Fatigued', 'You earn less XP. Play easier maps to rest.'],
   },
   options: {

@@ -93,8 +93,8 @@ export const mount = (meta, host) => {
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
   /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
-  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false;
-  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; } catch (_) {}
+  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false, sgPastPeak = false;
+  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; sgPastPeak = !!sv.pastPeak; } catch (_) {}
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -517,7 +517,7 @@ export const mount = (meta, host) => {
     nowEl.innerHTML = `
       <div class="qs-h">Strain Status</div>
       <div><b>${name}</b> - ${hint}</div>
-      <div>${minText(c.minutes)} of strain / ${Math.round(c.warm * 100)}% warm / sweet spot from ${Math.round(c.knots[1])} minutes / <span style="color:#f87171">XP cut at ${Math.round(c.knots[3])} minutes</span></div>
+      <div>${minText(c.minutes)} of strain / ${Math.round(c.warm * 100)}% warm / peak from ${Math.round(c.knots[1])} minutes / <span style="color:#f87171">XP cut at ${Math.round(c.knots[3])} minutes</span></div>
       <div class="qs-bar-labels">${stateLabel(c, name)}</div>
       ${barHtml(c.bar, c.ahead)}
       ${c.note ? `<div class="qs-dim">${c.note}</div>` : ''}`;
@@ -818,12 +818,12 @@ export const mount = (meta, host) => {
     const nowStage = stageOf(now.bar);
     if (nowStage === 'cold' || nowStage === 'warming') {
       const t = when(b => b >= BAR_ZONES[0]);
-      outlook.push(['Sweet Spot', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${aheadText}`]);
+      outlook.push(['Peak', t !== undefined ? `reached in <b>${durWords(t)}</b>` : `<b>not reached</b> in ${aheadText}`]);
     }
     const reach = r.samples.findIndex(s => inPeak(s.bar));
     if (reach >= 0) {
       const leave = r.samples.findIndex((s, i) => i > reach && !inPeak(s.bar));
-      outlook.push(['Leaves Sweet Spot', leave >= 0
+      outlook.push(['Leaves Peak', leave >= 0
         ? `<span title="${r.samples[leave].bar >= BAR_ZONES[1] ? 'Pushed past it: easier maps keep you there longer' : 'Cools below it: harder maps keep you there longer'}">in <b>${durWords(r.samples[leave].t)}</b></span>`
         : `<b>never</b> in ${aheadText}`]);
     }
@@ -1430,7 +1430,7 @@ export const mount = (meta, host) => {
       </tbody></table></div>` : '';
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
-        <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more without going past the XP cut. Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
+        <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more without going past Peak (or, if you allow it, past the XP cut). Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
         <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
           <span class="qs-dim">Speed</span>
           <select id="qs-sg-speed" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''} title="Quick: each change on its own. Balanced: the best combination, a step at a time. Thorough: more kinds of change, three queues kept at each step, the best checked with the simulator (takes minutes).">${[['quick', 'Quick'], ['balanced', 'Balanced'], ['thorough', 'Thorough']].map(([v, l]) => `<option value="${v}"${v === sgSpeed ? ' selected' : ''}>${l}</option>`).join('')}</select>
@@ -1440,6 +1440,7 @@ export const mount = (meta, host) => {
           <select id="qs-sg-goal" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''}>${[['all', 'All XP'], ...SKILLS.map(sk => [sk, SKILL_NAMES[sk]])].map(([v, l]) => `<option value="${v}"${v === sgGoal ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <span class="qs-dim" title="The rates the suggestions may try (inside what your Speed upgrades allow). Empty: any.">Rates</span>
           <input id="qs-sg-rmin" type="number" min="0.5" max="1.5" step="0.05" placeholder="min" value="${sgRateMin ? sgRateMin.toFixed(2) : ''}" style="width:58px;"${sg && sg.running ? ' disabled' : ''}><span class="qs-dim">–</span><input id="qs-sg-rmax" type="number" min="0.5" max="1.5" step="0.05" placeholder="max" value="${sgRateMax ? sgRateMax.toFixed(2) : ''}" style="width:58px;"${sg && sg.running ? ' disabled' : ''}><span class="qs-dim">×</span>
+          <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: suggestions keep you within Peak once you've reached it. On: they may push past Peak into Pushing, but never past the XP cut."><input id="qs-sg-pastpeak" type="checkbox"${sgPastPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow past Peak</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Fresh: every what-if uses real simulator answers, never one borrowed from a nearby play (answers already stored are still reused). Slower, but exact."><input id="qs-sg-fresh" type="checkbox"${sgFresh ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Fresh</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Also try adding your best maps from the last 7 days that aren't in the queue (ranked by the XP a minute you really got on them). A map new to the add-on needs a few simulator calls the first time."><input id="qs-sg-history" type="checkbox"${sgHistory ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Maps from your history</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Also try maps from the game's whole catalog: the ones that can't help your goal or are harder than you've passed lately are skipped, the most promising few are simulated (6 / 12 / 25 for Quick / Balanced / Thorough). New maps need simulator calls the first time."><input id="qs-sg-library" type="checkbox"${sgLibrary ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Scan my library</label>
@@ -1448,7 +1449,7 @@ export const mount = (meta, host) => {
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
         ${sg && sg.libNote && !sg.running ? `<div class="qs-dim" style="margin-top:6px; font-size:11px;">${esc(sg.libNote)}</div>` : ''}
-        ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past the XP cut. The suggestions below keep you under it.</div>` : ''}
+        ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past ${sg.pastPeak ? 'the XP cut' : 'Peak'}. The suggestions below keep you ${sg.pastPeak ? 'under the XP cut' : 'within Peak'}.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
         ${sgBest}
         ${sgSingles}
@@ -1658,7 +1659,7 @@ export const mount = (meta, host) => {
       };
     }
     const sgSpeedSel = outEl.querySelector('#qs-sg-speed'), sgGoalSel = outEl.querySelector('#qs-sg-goal');
-    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh, library: sgLibrary })); } catch (_) {} };
+    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh, library: sgLibrary, pastPeak: sgPastPeak })); } catch (_) {} };
     if (sgSpeedSel) sgSpeedSel.onchange = () => { sgSpeed = sgSpeedSel.value; sgSave(); };
     if (sgGoalSel) sgGoalSel.onchange = () => { sgGoal = sgGoalSel.value; sgSave(); };
     const sgHoursIn = outEl.querySelector('#qs-sg-hours');
@@ -1666,6 +1667,8 @@ export const mount = (meta, host) => {
     const rateIn = (el, set) => { if (el) el.onchange = () => { const v = Math.round(num(el.value) * 20) / 20; set(v >= 0.5 && v <= 1.5 ? v : 0); el.value = v >= 0.5 && v <= 1.5 ? v.toFixed(2) : ''; sgSave(); }; };
     rateIn(outEl.querySelector('#qs-sg-rmin'), (v) => { sgRateMin = v; });
     rateIn(outEl.querySelector('#qs-sg-rmax'), (v) => { sgRateMax = v; });
+    const sgPeakBox = outEl.querySelector('#qs-sg-pastpeak');
+    if (sgPeakBox) sgPeakBox.onchange = () => { sgPastPeak = sgPeakBox.checked; sgSave(); };
     const sgLibBox = outEl.querySelector('#qs-sg-library');
     if (sgLibBox) sgLibBox.onchange = () => { sgLibrary = sgLibBox.checked; sgSave(); };
     const sgFreshBox = outEl.querySelector('#qs-sg-fresh');
@@ -1683,9 +1686,9 @@ export const mount = (meta, host) => {
     if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
     if (sgBtn) sgBtn.onclick = async () => {
-      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, useLibrary = sgLibrary, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
+      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, useLibrary = sgLibrary, pastPeak = sgPastPeak, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
       const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
-      const s = r.suggest = { hours: H, fresh, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
+      const s = r.suggest = { hours: H, fresh, pastPeak, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
       let drawnAt = 0;
       const draw = (force) => { if (lastResult[3] === r && activeTab === 'suggest' && (force || Date.now() - drawnAt > 400)) { drawnAt = Date.now(); renderResult(...lastResult); } };
       const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
@@ -1697,16 +1700,18 @@ export const mount = (meta, host) => {
        *  so Warming Up and Pushing cost what they really cost), a little less for heavy mindblock late on. The XP cut
        *  is the one hard line: a queue that goes past it (once under it) is out. */
       const measure = (res) => {
+        // the line a queue mustn't cross: the end of Peak, or past it allowed, the XP cut
+        const limit = pastPeak ? XP_CUT : BAR_ZONES[1];
         let xp = 0, min = 0, peak = 0, cut = 0, block = 0, lateBlock = 0, lateN = 0, under = false, crossed = false;
         for (const p of res.plays) {
           const len = num(p.lengthMin) || 1;
           xp += goal === 'all' ? totalOf(p) : xpOf(p, goal);
           min += len;
           if (p.bar >= BAR_ZONES[0] && p.bar < BAR_ZONES[1]) peak += len;
-          if (p.bar >= XP_CUT) cut += len;
+          if (p.bar >= limit) cut += len;
           block += num(p.block ?? 1) * len;
           // starting past the cut you may cool down first; once under it, going past it again rules the queue out
-          if (p.bar < XP_CUT) under = true;
+          if (p.bar < limit) under = true;
           else if (under) crossed = true;
           if (p.start >= H * 3600 * 0.75) { lateBlock += num(p.block ?? 1); lateN++; }
         }
@@ -1717,11 +1722,11 @@ export const mount = (meta, host) => {
         return { total: xp, score: rank, crossed, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const pc = (v) => `${Math.round(v * 100)}%`;
-      const whyOf = (m, bm, c, bc) => (c && !bc ? 'Goes past the XP cut' : bc && !c ? 'Stays under the XP cut' : bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
-        : m.peak - bm.peak >= 0.03 ? `More time in the sweet spot (${pc(bm.peak)} → ${pc(m.peak)})`
+      const whyOf = (m, bm, c, bc) => (c && !bc ? (pastPeak ? 'Goes past the XP cut' : 'Goes past Peak') : bc && !c ? (pastPeak ? 'Stays under the XP cut' : 'Stays within Peak') : bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
+        : m.peak - bm.peak >= 0.03 ? `More time in Peak (${pc(bm.peak)} → ${pc(m.peak)})`
         : m.block - bm.block >= 0.02 ? `Less mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
         : m.cut - bm.cut >= 0.03 ? `More time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
-        : bm.peak - m.peak >= 0.03 ? `Less time in the sweet spot (${pc(bm.peak)} → ${pc(m.peak)})`
+        : bm.peak - m.peak >= 0.03 ? `Less time in Peak (${pc(bm.peak)} → ${pc(m.peak)})`
         : bm.block - m.block >= 0.02 ? `More mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
         : 'Changes which maps fill your time');
       const seen = new Map();
