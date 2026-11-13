@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.567';
-export const VERSION_ID = '2026-11-13 13H21M';
+export const VERSION = '1.3.568';
+export const VERSION_ID = '2026-11-13 13H27M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -43,6 +43,7 @@ export const HOTFIXES = {
   text: `v${VERSION} · 12 Nov 2026
 • New Suggestions tab: drop dead-weight maps, repeat your best ones
 • Uses the shared sim cache before simulating: faster scans
+• Suggestions: swaps maps, trims repeats, and looks further for the best queue
 • Levels: follow your routes from Gemini's level up sim
 • Levels: Overall display, next upgrades on the bar
 • Levels update by themselves after an upgrade

@@ -1403,7 +1403,7 @@ export const mount = (meta, host) => {
     // performers come only from plays already simulated (this add-on's and the official sim's), never new calls ----
     const sg = r.suggest;
     const sgShort = (t) => esc(t);
-    const sgText = (st) => (st.kind === 'remove' ? `Drop <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×)</span>`);
+    const sgText = (st) => (st.kind === 'swap' ? `Swap <b>${sgShort(st.a)}</b> for <b>${sgShort(st.b)}</b> <span class="qs-dim">(${st.rate}×)</span>` : st.kind === 'remove' ? `Drop <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×)</span>`);
     /** The XP that counts: the focus skills' when some are ticked, else all. `x`: the run (base*) or a change. */
     const sgVal = (x) => (sg && sg.focusNames && sg.focusNames.length ? num(x === sg ? sg.baseFocus : x.focusTotal) : num(x === sg ? sg.baseTotal : x.total));
     const sgPct = (v, base) => { const d = base > 0 ? v / base - 1 : 0; return `<span style="color:${d > 0.002 ? '#4ade80' : d < -0.002 ? '#f87171' : '#9ca3af'}; font-weight:600;">${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</span>`; };
@@ -1819,24 +1819,29 @@ export const mount = (meta, host) => {
           }
           tops = tops.filter(t => t.perMin > avg).sort((a, b) => b.fit - a.fit).slice(0, 100);
         } catch (e) { logProblem('suggest', e); }
-        // the changes: drop a map (dead weight first), a repeat more for a map above average, a top performer added
+        // the changes: drop a map (dead weight first), a repeat more for a map above average (one fewer below it), a top
+        // performer added; then swaps, built from what those showed
         const movesOf = (es) => {
           const out = [];
           es.forEach((e, i) => {
             const rt = rateOf(e.beatmapId);
             if (es.length > 1) out.push({ step: { kind: 'remove', a: e.title, why: rt < avg ? `${pct(rt)} below the queue's average XP a minute` : `${pct(rt)} above the queue's average` }, entries: es.filter((_, j) => j !== i) });
             if (rt >= avg) out.push({ step: { kind: 'rep', a: e.title, from: e.repeat, to: e.repeat + 1, why: `${pct(rt)} above the queue's average XP a minute` }, entries: es.map((x, j) => (j === i ? { ...x, repeat: x.repeat + 1 } : x)) });
+            else if (e.repeat > 1) out.push({ step: { kind: 'rep', a: e.title, from: e.repeat, to: e.repeat - 1, why: `${pct(rt)} below the queue's average XP a minute` }, entries: es.map((x, j) => (j === i ? { ...x, repeat: x.repeat - 1 } : x)) });
           });
           for (const t of tops) if (!es.some(e => e.beatmapId === t.id)) out.push({ step: { kind: 'add', a: t.title, rate: t.rate, why: t.role ? `${t.role === 'cools' ? 'lets your strain come down' : 'holds your strain'} while giving ~${fmt(t.perMin)} XP a minute` : `a top performer for what this queue trains, ~${fmt(t.perMin)} XP a minute` }, entries: [...es, { beatmapId: t.id, title: t.title, lockedRate: t.rate, lockedMods: ctx.mods, repeat: 1, played: 0, lengthSec: t.lengthSec }] });
           return out;
         };
-        // one pass of single changes, then the best of them combined, up to 3
-        let cur = { entries: queue.entries, steps: [], m: base.m, res: base.res };
+        // each step builds on the 3 best queues so far (not just the best one), so a first change that looks best
+        // can't lock out a better path; up to 3 steps, then 3 of polishing
+        let beam = [{ entries: queue.entries, steps: [], m: base.m, res: base.res }], bestScore = -Infinity;
         for (let step = 1; step <= 6 && alive(); step++) {
           // steps 4-6: polishing, a second pass from what the first three found
           const stepNote = () => (step <= 3 ? `Step ${step} of 3 · ${s.done} queues checked` : `Polishing (${step - 3} of 3) · ${s.done} queues checked`);
           s.note = stepNote();
-          let best = null;
+          const found = [];
+          for (const cur of beam) {
+          if (!alive()) break;
           rateFrom(cur.res, cur.entries);
           // the step's changes, up to 8 forecast at once (independent of each other), then looked at in order
           const moves = movesOf(cur.entries);
@@ -1846,12 +1851,41 @@ export const mount = (meta, host) => {
             if (!ev || !alive()) break;
             if (step === 1) s.singles.push({ step: mv.step, score: ev.m.score, total: ev.m.total, focusTotal: ev.m.focusTotal, crossed: ev.m.crossed, end: ev.m.end });
             const better = cur.m.crossed ? ev.m.score > cur.m.score + 0.01 : !ev.m.crossed && ev.m.score > cur.m.score * 1.005;
-            if (better && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m, res: ev.res };
+            if (better) found.push({ entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m, res: ev.res });
             draw();
           }
-          if (!best) break;
-          cur = best;
-          if (!cur.m.crossed) s.best = { steps: cur.steps, total: cur.m.total, focusTotal: cur.m.focusTotal, end: cur.m.end, entries: cur.entries };
+          if (alive()) {
+            const valueOf = new Map(), addOf = [];
+            moves.forEach((mv, mi) => {
+              const ev = evs[mi];
+              if (!ev) return;
+              if (mv.step.kind === 'remove') valueOf.set(mv.step.a, cur.m.score - ev.m.score);
+              if (mv.step.kind === 'add') addOf.push({ mv, score: ev.m.score });
+            });
+            const weakest = cur.entries.map((e, i) => ({ e, i, v: valueOf.has(e.title) ? valueOf.get(e.title) : Infinity })).filter(x => x.v !== Infinity && cur.entries.length > 1).sort((a, b) => a.v - b.v).slice(0, 3);
+            const bestAdds = addOf.sort((a, b) => b.score - a.score).slice(0, 5);
+            const swaps = [];
+            for (const w of weakest) for (const ad of bestAdds) {
+              const added = ad.mv.entries[ad.mv.entries.length - 1];
+              swaps.push({ step: { kind: 'swap', a: w.e.title, b: added.title, rate: ad.mv.step.rate, why: `${w.e.title} adds the least to this queue; ${ad.mv.step.why}` }, entries: [...cur.entries.filter((_, j) => j !== w.i), added] });
+            }
+            const sev = await pool(swaps.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.note = stepNote(); draw(); return ev; }), 8);
+            swaps.forEach((mv, mi) => {
+              const ev = sev[mi];
+              if (!ev) return;
+              if (step === 1) s.singles.push({ step: mv.step, score: ev.m.score, total: ev.m.total, focusTotal: ev.m.focusTotal, crossed: ev.m.crossed, end: ev.m.end });
+              const better = cur.m.crossed ? ev.m.score > cur.m.score + 0.01 : !ev.m.crossed && ev.m.score > cur.m.score * 1.005;
+              if (better) found.push({ entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m, res: ev.res });
+            });
+            draw();
+          }
+          }
+          if (!found.length) break;
+          const kept = new Map();
+          for (const q of found.sort((a, b) => b.m.score - a.m.score)) { const k = keyOf(q.entries); if (!kept.has(k)) kept.set(k, q); if (kept.size >= 3) break; }
+          beam = [...kept.values()];
+          const top = beam[0];
+          if (!top.m.crossed && top.m.score > bestScore) { bestScore = top.m.score; s.best = { steps: top.steps, total: top.m.total, focusTotal: top.m.focusTotal, end: top.m.end, entries: top.entries }; }
         }
       } catch (e) { s.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
       s.running = false;
