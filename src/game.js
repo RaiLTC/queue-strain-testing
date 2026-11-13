@@ -76,28 +76,12 @@ const catalogLen = {};
 const catalogStars = {};
 /** And its keys, mode, note and long-note counts and BPM. */
 const catalogInfo = {};
-/** The chart structure QuickScan measured for the maps on this computer (IndexedDB 'skillscan-cache', store
- *  'structure'): long-note share, held overlap, scroll changes, densities. Empty when it isn't installed. */
-const structureOf = async () => {
-  const out = new Map();
-  try {
-    if (typeof indexedDB === 'undefined' || !indexedDB.databases || !(await indexedDB.databases()).some(d => d.name === 'skillscan-cache')) return out;
-    const db = await new Promise((ok, no) => { const q = indexedDB.open('skillscan-cache'); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); q.onupgradeneeded = () => { q.transaction.abort(); no(new Error('none')); }; });
-    if (db.objectStoreNames.contains('structure')) {
-      const rows = await new Promise((ok) => { const q = db.transaction('structure', 'readonly').objectStore('structure').getAll(); q.onsuccess = () => ok(q.result || []); q.onerror = () => ok([]); });
-      for (const r of rows) if (r && r.beatmapId) out.set(num(r.beatmapId), r);
-    }
-    db.close();
-  } catch (e) { logProblem('library', e); }
-  return out;
-};
 const PHYSICAL_GOALS = new Set(['speed', 'stamina', 'jackspeed', 'coordination', 'all']);
-/** Maps from the whole library worth simulating for `goal`: the ones on this computer (QuickScan's measured
- *  charts; else every 4K map in the catalog), without the ones in the queue, the ones harder than you've passed
+/** Maps from the whole library worth simulating for `goal`: every 4K map in the game's catalog (the server's, so
+ *  current), without the ones in the queue, the ones harder than you've passed
  *  lately, and the ones that can't give the goal skill anything at all; ranked for the goal, the best `limit`. */
 export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12 } = {}) {
   const names = await mapNames();
-  const structure = await structureOf();
   const skip = new Set(skipIds.map(Number));
   // the hardest map you've passed in the last 30 days, at about the rate you'd play these
   let hardest = 0;
@@ -106,18 +90,16 @@ export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods =
     for (const x of rows) hardest = Math.max(hardest, num(catalogStars[num(x.beatmapId)]) * (num(x.rate) || 1));
   } catch (_) {}
   const cap = hardest > 0 ? hardest * 1.05 : Infinity;
-  const ids = structure.size ? [...structure.keys()] : Object.keys(catalogInfo).map(Number).filter(id => catalogInfo[id].mode === 3 && catalogInfo[id].keys === 4);
+  const ids = Object.keys(catalogInfo).map(Number).filter(id => catalogInfo[id].mode === 3 && catalogInfo[id].keys === 4);
   const scored = [];
   for (const id of ids) {
     if (skip.has(id) || !catalogLen[id] || !names[id]) continue;
-    const st = structure.get(id) || {}, info = catalogInfo[id] || {};
+    const info = catalogInfo[id] || {};
     const stars = num(catalogStars[id]) * rate;
     if (!(stars > 0) || stars > cap) continue;
-    const lnShare = st.lnPct !== undefined ? num(st.lnPct) : info.objects ? num(info.ln) / info.objects : 0;
-    // a skill that can't win a single note on this chart (QuickScan's structural zeros)
+    const lnShare = info.objects ? num(info.ln) / info.objects : 0;
+    // a skill that can't win a single note on this chart: release needs long notes
     if (goal === 'release' && !(lnShare > 0)) continue;
-    if (goal === 'coordination' && st.heldFrac !== undefined && !(num(st.heldFrac) > 0)) continue;
-    if ((goal === 'speedjam' || goal === 'memory') && st.svOff !== undefined && !(num(st.svOff) > 0)) continue;
     const minutes = catalogLen[id] / rate / 60;
     // how promising, for the goal: physical skills want hard charts, accuracy long ones, release LN-heavy ones
     const nearTop = cap < Infinity ? stars / cap : stars / 10;
