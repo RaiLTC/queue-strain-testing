@@ -258,6 +258,83 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
 let officialIndex = null;
 const officialValues = new Map();
 export const officialStats = { keys: 0, versions: [], hits: 0, misses: 0, error: '' };
+
+// ---------------------------------------------------------------------
+// The shared sim cache (cache.oss.idle.rhythmgamers.net, made for add-ons): every play the official sim servers
+// make is kept there, one per skillset. Asked first, a batch of maps a request at the character's play levels; only
+// what it doesn't have goes to the simulator. At most 60 lookups a minute (we keep to 55). Its XP is at x1: times the
+// skill's own multiplier (upgrades, overdrive, prestige) and, for physical skills, the fatigue XP factor; mods are in.
+// Memory: it keeps a map only never played or played 68+ times.
+// ---------------------------------------------------------------------
+export const SHARED_CACHE_URL = 'https://cache.oss.idle.rhythmgamers.net';
+export const sharedStats = { lookups: 0, rows: 0, hits: 0, error: '' };
+const sharedRows = new Map(), sharedAsked = new Set(), lookupTimes = [];
+const learnedOf = (plays) => (plays <= 0 ? false : plays >= 68 ? true : undefined);
+const ownMult = (s) => { const od = num(s && s.overdrive), odM = od <= 0 ? 1 : Math.max(1, Math.min(od, 2.5 * Math.pow(od, Math.log10(2)))); return (1 + 0.1 * num(s && s.upgrades) * odM) * Math.pow(1.1, num(s && s.prestige)); };
+const lookupSlot = async () => {
+  for (;;) {
+    const now = Date.now();
+    while (lookupTimes.length && now - lookupTimes[0] > 60000) lookupTimes.shift();
+    if (lookupTimes.length < 55) { lookupTimes.push(now); return; }
+    await sleep(60000 - (now - lookupTimes[0]) + 50);
+  }
+};
+/** Asks the shared cache about `ids` at play levels `levels` (the 11 joined, as officialLevels gives them). */
+export const sharedLookup = async (generation, levels, ids, mods = []) => {
+  const want = [...new Set(ids)].filter(id => !sharedAsked.has(`${generation}|${levels}|${id}`));
+  if (!want.length || typeof fetch === 'undefined') return;
+  const lv = levels.split(',').map(Number), body = Object.fromEntries(GAME_SKILLS.map((sk, i) => [sk, lv[i]]));
+  for (let i = 0; i < want.length; i += 200) {
+    const chunk = want.slice(i, i + 200);
+    for (const id of chunk) sharedAsked.add(`${generation}|${levels}|${id}`);
+    try {
+      await lookupSlot();
+      const res = await fetch(`${SHARED_CACHE_URL}/lookup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ generation, levels: body, beatmap_ids: chunk, mods }) });
+      sharedStats.lookups++;
+      if (!res.ok) { sharedStats.error = `answered ${res.status}`; continue; }
+      const { columns, rows } = await res.json();
+      const at = Object.fromEntries((columns || []).map((c, k) => [c, k]));
+      if (at.strained_minutes === undefined || at.xp === undefined) continue;
+      for (const row of rows || []) {
+        const mk = MOD_ORDER.filter(m => (row[at.mods] || []).includes(m)).join(',');
+        sharedRows.set(`${generation}|${levels}|${row[at.beatmap_id]}@${row[at.rate]}@${mk}@${row[at.learned] ? 1 : 0}`, Object.fromEntries(columns.map((c, k) => [c, row[k]])));
+        sharedStats.rows++;
+      }
+      sharedStats.error = '';
+    } catch (e) { sharedStats.error = String(e && e.message ? e.message : e); }
+  }
+};
+/** For the library: every play the shared cache has at the character's play levels (`minutes` in), for `ids` at
+ *  `rates`, by map@rate, in the simulator's terms. */
+export const sharedPlaysFor = async (skills, generation, mods, minutes, ids, rates, playsOf) => {
+  const out = new Map();
+  const levels = officialLevels(skills, minutes);
+  await sharedLookup(generation, levels, ids, mods);
+  const tired = fatigueXp(fatigueLevel(minutes)), mk = MOD_ORDER.filter(m => (mods || []).includes(m)).join(',');
+  for (const id of ids) {
+    const learned = learnedOf(playsOf.get(id) || 0);
+    if (learned === undefined) continue;
+    for (const rate of rates) {
+      const row = sharedRows.get(`${generation}|${levels}|${id}@${rate}@${mk}@${learned ? 1 : 0}`);
+      if (!row || row.passed === false) continue;
+      out.set(`${id}@${rate}`, { xp: Object.fromEntries(Object.entries(row.xp || {}).map(([sk, v]) => [sk, num(v) * ownMult(skills[sk]) * (PHYSICAL.includes(sk) ? tired : 1)])), passed: true, exact: true, strained: num(row.strained_minutes) });
+    }
+  }
+  return out;
+};
+/** The shared cache's play for this exact one, in the simulator's terms, or null. `ids`: the maps to ask about together. */
+const sharedAnswer = async (skills, generation, beatmapId, rate, mods, minutes, plays, ids) => {
+  const learned = learnedOf(plays);
+  if (learned === undefined || (mods || []).includes('NF')) return null;
+  const levels = officialLevels(skills, minutes);
+  await sharedLookup(generation, levels, ids && ids.length ? ids : [beatmapId], mods);
+  const row = sharedRows.get(`${generation}|${levels}|${beatmapId}@${rate}@${MOD_ORDER.filter(m => (mods || []).includes(m)).join(',')}@${learned ? 1 : 0}`);
+  if (!row) return null;
+  const tired = fatigueXp(fatigueLevel(minutes));
+  const xp = Object.fromEntries(Object.entries(row.xp || {}).map(([sk, v]) => [sk, num(v) * ownMult(skills[sk]) * (PHYSICAL.includes(sk) ? tired : 1)]));
+  sharedStats.hits++;
+  return { xp: row.passed === false ? {} : xp, passed: row.passed !== false, strained_minutes: num(row.strained_minutes), fail_seconds: row.fail_seconds ?? undefined, fail_progress: row.fail_progress ?? undefined, shared: true };
+};
 /** Reads the official sim's keys once (the values when asked for), keeping only the recent ones' versions. */
 const loadOfficial = async () => {
   if (officialIndex) return officialIndex;
@@ -528,6 +605,9 @@ export async function forecast(queue, ctx, onProgress, token) {
     const key = `${beatmapId}|${r}|${[...m].sort().join('')}|${bucket}|${playsKey}${run ? `|#${run}` : ''}`;
     const kept = cached(asOwner, key);
     if (kept) { fromCache++; timing.exact++; return { answer: kept, fresh: false }; }
+    // the shared sim cache may have this very play (every official simulation, anyone's), asked with the queue's maps
+    const sh = await sharedAnswer(asSkills, num(row.generation) || 1, beatmapId, r, m, bucket, playsKey, mapIds);
+    if (sh) { fromCache++; timing.official++; remember(asOwner, key, sh); return { answer: sh, fresh: false }; }
     // the official sim add-on may have simulated this very play already
     const off = await officialAnswer(asSkills, num(row.generation) || 1, beatmapId, r, m, bucket, playsKey, run || 0);
     if (off) { fromCache++; timing.official++; remember(asOwner, key, off); return { answer: off, fresh: false }; }

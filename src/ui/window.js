@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
-import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
+import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, sharedStats, SHARED_CACHE_URL, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -1470,6 +1470,7 @@ export const mount = (meta, host) => {
       const match = calibEst > 0 ? calibReal / calibEst : undefined;
       const fromEdit = queue.from && queue.from !== '.dock__source';
       const health = [
+        ['Shared sim cache', sharedStats.error ? 'warn' : 'ok', `asked first, before the simulator: your play levels, generation and the map ids go to ${SHARED_CACHE_URL.replace('https://', '')} (it keeps every official simulation, anyone's). ${sharedStats.lookups.toLocaleString()} lookups, ${sharedStats.hits.toLocaleString()} plays reused${sharedStats.error ? `, last problem: ${sharedStats.error}` : ''}`],
         ['Official sim', officialStats.error ? 'warn' : officialStats.keys ? 'ok' : 'warn', officialStats.error ? `couldn't read its plays: ${officialStats.error}` : officialStats.keys ? `${officialStats.keys.toLocaleString()} stored plays (v${officialStats.versions.join(', ')}) · ${officialStats.hits.toLocaleString()} reused, ${officialStats.misses.toLocaleString()} not found` : 'no stored plays found (the oss!idle sim add-on keeps them)'],
         ['Medals', medals.ok ? 'ok' : r.calib && Object.keys(r.calib.factors).length ? 'warn' : 'bad',
           medals.ok ? (medals.guest ? 'guest: none' : `server · ×${medals.multiplier.toFixed(3)}`) : 'server not reached: learned from plays'],

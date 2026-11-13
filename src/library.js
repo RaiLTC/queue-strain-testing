@@ -5,7 +5,7 @@
 // (IndexedDB) for the character's current levels.
 
 import { SKILLS, catalogEntries, gameRows, logProblem, num } from './game.js';
-import { CALL_SPACING_MS, RETRY_WAITS_MS, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sleep, strainStep } from './forecast.js';
+import { CALL_SPACING_MS, RETRY_WAITS_MS, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sharedPlaysFor, sleep, strainStep } from './forecast.js';
 import { STRAIN_CAP } from './rules/fatigue.js';
 
 const DB = 'queue-strain', STORE = 'library';
@@ -51,6 +51,9 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
   // every candidate: map@rate -> XP per skill a play (simulator scale), where it came from
   const cand = new Map();
   const put = (mr, xp, source, exact) => { const old = cand.get(mr); if (!old || (exact && !old.exact)) cand.set(mr, { xp, source, exact }); };
+  // first the shared sim cache: every official simulation anyone made, at your exact play levels
+  onProgress({ phase: 'Asking the shared sim cache' });
+  try { for (const [mr, a] of await sharedPlaysFor(skills, num(row.generation) || 1, mods, minutes, entries.map(e => e.id), rates, plays)) put(mr, a.xp, 'shared cache', true); } catch (e) { logProblem('library', e); }
   onProgress({ phase: 'Reading the official sim\'s plays' });
   for (const [mr, a] of await officialPlaysFor(skills, num(row.generation) || 1, mods, minutes, new Set(entries.map(e => e.id)), rates, plays, 3)) if (a.passed !== false) put(mr, a.xp, 'official sim', a.exact);
   for (const [mr, a] of knownMaps(owner)) if (a.fails * 2 < a.n) put(mr, Object.fromEntries(SKILLS.map(sk => [sk, num(a.xp[sk]) / Math.max(1, a.n)])), 'this add-on', true);
