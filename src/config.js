@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.4.01';
-export const VERSION_ID = '2026-11-13 14H13M';
+export const VERSION = '1.4.02';
+export const VERSION_ID = '2026-11-13 14H17M';
 
 // none / info / urgent
 export const NOTICE = {
