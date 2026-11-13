@@ -69,7 +69,7 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
     for (const [mr, m] of sum) if (!cand.has(mr)) put(mr, Object.fromEntries(SKILLS.map(sk => [sk, m.xp[sk] / m.n])), 'your plays', false);
   } catch (e) { logProblem('library', e); }
 
-  const perMin = (mr, xp, sk) => { const [id, rate] = mr.split('@').map(Number), e = byId.get(id); return e ? num(xp[sk]) / Math.max(0.1, e.lengthSec / rate / 60) : 0; };
+  const perMin = (mr, xp, sk) => { const [id, rate] = mr.split('@').map(Number), e = byId.get(id); const v = sk === 'all' ? SKILLS.reduce((t, s2) => t + num(xp[s2]) * bonus(s2), 0) / bonus('all') : num(xp[sk]); return e ? v / Math.max(0.1, e.lengthSec / rate / 60) : 0; };
   const bucket = Math.min(STRAIN_CAP, strainStep(minutes));
   let calls = 0, nextCall = 0;
   /** One simulation at the character's exact levels, mid Peak: confirms a candidate (or drops it, failed). */
@@ -93,7 +93,8 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
   };
   // per skill: the best 15, each confirmed; one that falls out gives its place to the next best, confirmed in turn
   const lists = {};
-  for (const sk of SKILLS) {
+  // every skill, then 'all': the most XP a minute whatever the balance (each skill's XP with its own bonus)
+  for (const sk of [...SKILLS, 'all']) {
     if (stopped()) break;
     let spent = 0;
     for (;;) {
