@@ -61,7 +61,7 @@ export async function mapNames() {
       const walk = (v) => {
         if (!v || typeof v !== 'object') return;
         if (Array.isArray(v)) { v.forEach(walk); return; }
-        if (Array.isArray(v.versions) && v.title) for (const d of v.versions) if (d && d.id) { out[d.id] = `${v.artist ? `${v.artist} - ` : ''}${v.title}${d.version ? ` [${d.version}]` : ''}`; catalogLen[d.id] = num(d.total_length) / 1000; catalogStars[d.id] = num(d.difficulty); }
+        if (Array.isArray(v.versions) && v.title) for (const d of v.versions) if (d && d.id) { out[d.id] = `${v.artist ? `${v.artist} - ` : ''}${v.title}${d.version ? ` [${d.version}]` : ''}`; catalogLen[d.id] = num(d.total_length) / 1000; catalogStars[d.id] = num(d.difficulty); catalogInfo[d.id] = { keys: num(d.keys), mode: num(d.mode), objects: num(d.objects), ln: num(d.ln), bpm: num(d.bpm) }; }
         for (const k in v) if (k !== 'versions') walk(v[k]);
       };
       walk(await res.json());
@@ -74,6 +74,64 @@ export async function mapNames() {
 const catalogLen = {};
 /** And its star rating. */
 const catalogStars = {};
+/** And its keys, mode, note and long-note counts and BPM. */
+const catalogInfo = {};
+/** The chart structure QuickScan measured for the maps on this computer (IndexedDB 'skillscan-cache', store
+ *  'structure'): long-note share, held overlap, scroll changes, densities. Empty when it isn't installed. */
+const structureOf = async () => {
+  const out = new Map();
+  try {
+    if (typeof indexedDB === 'undefined' || !indexedDB.databases || !(await indexedDB.databases()).some(d => d.name === 'skillscan-cache')) return out;
+    const db = await new Promise((ok, no) => { const q = indexedDB.open('skillscan-cache'); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); q.onupgradeneeded = () => { q.transaction.abort(); no(new Error('none')); }; });
+    if (db.objectStoreNames.contains('structure')) {
+      const rows = await new Promise((ok) => { const q = db.transaction('structure', 'readonly').objectStore('structure').getAll(); q.onsuccess = () => ok(q.result || []); q.onerror = () => ok([]); });
+      for (const r of rows) if (r && r.beatmapId) out.set(num(r.beatmapId), r);
+    }
+    db.close();
+  } catch (e) { logProblem('library', e); }
+  return out;
+};
+const PHYSICAL_GOALS = new Set(['speed', 'stamina', 'jackspeed', 'coordination', 'all']);
+/** Maps from the whole library worth simulating for `goal`: the ones on this computer (QuickScan's measured
+ *  charts; else every 4K map in the catalog), without the ones in the queue, the ones harder than you've passed
+ *  lately, and the ones that can't give the goal skill anything at all; ranked for the goal, the best `limit`. */
+export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12 } = {}) {
+  const names = await mapNames();
+  const structure = await structureOf();
+  const skip = new Set(skipIds.map(Number));
+  // the hardest map you've passed in the last 30 days, at about the rate you'd play these
+  let hardest = 0;
+  try {
+    const rows = (await gameRows('SELECT beatmapId, rate FROM score WHERE characterId = ? AND playedAt >= ?', [row.id, Date.now() - 30 * DAY_MS])) || [];
+    for (const x of rows) hardest = Math.max(hardest, num(catalogStars[num(x.beatmapId)]) * (num(x.rate) || 1));
+  } catch (_) {}
+  const cap = hardest > 0 ? hardest * 1.05 : Infinity;
+  const ids = structure.size ? [...structure.keys()] : Object.keys(catalogInfo).map(Number).filter(id => catalogInfo[id].mode === 3 && catalogInfo[id].keys === 4);
+  const scored = [];
+  for (const id of ids) {
+    if (skip.has(id) || !catalogLen[id] || !names[id]) continue;
+    const st = structure.get(id) || {}, info = catalogInfo[id] || {};
+    const stars = num(catalogStars[id]) * rate;
+    if (!(stars > 0) || stars > cap) continue;
+    const lnShare = st.lnPct !== undefined ? num(st.lnPct) : info.objects ? num(info.ln) / info.objects : 0;
+    // a skill that can't win a single note on this chart (QuickScan's structural zeros)
+    if (goal === 'release' && !(lnShare > 0)) continue;
+    if (goal === 'coordination' && st.heldFrac !== undefined && !(num(st.heldFrac) > 0)) continue;
+    if ((goal === 'speedjam' || goal === 'memory') && st.svOff !== undefined && !(num(st.svOff) > 0)) continue;
+    const minutes = catalogLen[id] / rate / 60;
+    // how promising, for the goal: physical skills want hard charts, accuracy long ones, release LN-heavy ones
+    const nearTop = cap < Infinity ? stars / cap : stars / 10;
+    const score = goal === 'accuracy' ? minutes * (0.5 + nearTop)
+      : goal === 'release' ? lnShare * nearTop * Math.sqrt(minutes)
+      : PHYSICAL_GOALS.has(goal) ? nearTop * nearTop * Math.sqrt(minutes)
+      : nearTop * Math.sqrt(minutes);
+    scored.push({ id, score, stars });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit).map(m => ({
+    beatmapId: m.id, title: names[m.id], lockedRate: rate, lockedMods: mods, repeat: 1, played: 0, lengthSec: catalogLen[m.id],
+    history: { perMin: 0, plays: 0, stars: m.stars / rate, library: true },
+  }));
+}
 /** Maps from the player's own recent history (the last `days`) that aren't in the queue, as queue entries ready
  *  to forecast: played at the rate and mods last used on them, ranked by the real XP a minute they earned then
  *  (from the game's XP log, no simulator call). The best `top` of them. */

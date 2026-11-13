@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { cached, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
-import { MINDBLOCK, SKILLS, mapNames, historyMaps, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
+import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
@@ -93,8 +93,8 @@ export const mount = (meta, host) => {
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
   /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
-  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false;
-  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; } catch (_) {}
+  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false;
+  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; } catch (_) {}
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1395,7 +1395,7 @@ export const mount = (meta, host) => {
     const sgXpName = (q) => `${q.goal === 'all' ? 'XP' : `${SKILL_NAMES[q.goal]} XP`} in ${q.hours}h`;
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
     const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
-    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.library ? `, ${st.stars.toFixed(1)}★, from your library)` : `${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)`}</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
     /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
     const sgEnds = (end) => {
       if (!end || !sg) return '';
@@ -1436,6 +1436,7 @@ export const mount = (meta, host) => {
           <input id="qs-sg-rmin" type="number" min="0.5" max="1.5" step="0.05" placeholder="min" value="${sgRateMin ? sgRateMin.toFixed(2) : ''}" style="width:58px;"${sg && sg.running ? ' disabled' : ''}><span class="qs-dim">–</span><input id="qs-sg-rmax" type="number" min="0.5" max="1.5" step="0.05" placeholder="max" value="${sgRateMax ? sgRateMax.toFixed(2) : ''}" style="width:58px;"${sg && sg.running ? ' disabled' : ''}><span class="qs-dim">×</span>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Fresh: every what-if uses real simulator answers, never one borrowed from a nearby play (answers already stored are still reused). Slower, but exact."><input id="qs-sg-fresh" type="checkbox"${sgFresh ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Fresh</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Also try adding your best maps from the last 7 days that aren't in the queue (ranked by the XP a minute you really got on them). A map new to the add-on needs a few simulator calls the first time."><input id="qs-sg-history" type="checkbox"${sgHistory ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Maps from your history</label>
+          <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Also try maps from your whole library: the ones that can't help your goal or are harder than you've passed lately are skipped, the most promising few are simulated (6 / 12 / 25 for Quick / Balanced / Thorough). New maps need simulator calls the first time."><input id="qs-sg-library" type="checkbox"${sgLibrary ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Scan my library</label>
           ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
@@ -1650,7 +1651,7 @@ export const mount = (meta, host) => {
       };
     }
     const sgSpeedSel = outEl.querySelector('#qs-sg-speed'), sgGoalSel = outEl.querySelector('#qs-sg-goal');
-    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh })); } catch (_) {} };
+    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh, library: sgLibrary })); } catch (_) {} };
     if (sgSpeedSel) sgSpeedSel.onchange = () => { sgSpeed = sgSpeedSel.value; sgSave(); };
     if (sgGoalSel) sgGoalSel.onchange = () => { sgGoal = sgGoalSel.value; sgSave(); };
     const sgHoursIn = outEl.querySelector('#qs-sg-hours');
@@ -1658,6 +1659,8 @@ export const mount = (meta, host) => {
     const rateIn = (el, set) => { if (el) el.onchange = () => { const v = Math.round(num(el.value) * 20) / 20; set(v >= 0.5 && v <= 1.5 ? v : 0); el.value = v >= 0.5 && v <= 1.5 ? v.toFixed(2) : ''; sgSave(); }; };
     rateIn(outEl.querySelector('#qs-sg-rmin'), (v) => { sgRateMin = v; });
     rateIn(outEl.querySelector('#qs-sg-rmax'), (v) => { sgRateMax = v; });
+    const sgLibBox = outEl.querySelector('#qs-sg-library');
+    if (sgLibBox) sgLibBox.onchange = () => { sgLibrary = sgLibBox.checked; sgSave(); };
     const sgFreshBox = outEl.querySelector('#qs-sg-fresh');
     if (sgFreshBox) sgFreshBox.onchange = () => { sgFresh = sgFreshBox.checked; sgSave(); };
     const sgHistSel = outEl.querySelector('#qs-sg-history');
@@ -1666,7 +1669,7 @@ export const mount = (meta, host) => {
     if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
     if (sgBtn) sgBtn.onclick = async () => {
-      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
+      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, useLibrary = sgLibrary, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
       const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
       const s = r.suggest = { hours: H, fresh, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
       let drawnAt = 0;
@@ -1753,7 +1756,7 @@ export const mount = (meta, host) => {
           }
         }
         // a map from your history, added at the end with one play
-        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId) && h.lockedRate >= rMin - 1e-9 && h.lockedRate <= rMax + 1e-9) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin, easy: !!h.history.easy, stars: h.history.stars }, entries: [...es, h] });
+        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId) && h.lockedRate >= rMin - 1e-9 && h.lockedRate <= rMax + 1e-9) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin, easy: !!h.history.easy, library: !!h.history.library, stars: h.history.stars }, entries: [...es, h] });
         return out;
       };
       let extra = [];
@@ -1767,6 +1770,12 @@ export const mount = (meta, host) => {
       } catch (_) {}
       try {
         if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId), { easy: 3 }); }
+        if (useLibrary) {
+          s.note = 'Picking maps from your library'; draw(true);
+          const speedUps = num(ctx.row.speedUpgrades), libRate = Math.min(Math.max(num(ctx.rate) || 1, rMin, Math.max(0.5, 1 - 0.05 * speedUps)), rMax, Math.min(1.5, 1 + 0.05 * speedUps));
+          const lib = await libraryMaps(ctx.row, [...queue.entries, ...extra].map(e => e.beatmapId), { goal, rate: Math.round(libRate * 100) / 100, mods: ctx.mods, limit: { quick: 6, balanced: 12, thorough: 25 }[speed] });
+          extra = [...extra, ...lib];
+        }
         const baseKey = keyOf(queue.entries);
         const base = await evalQ(queue.entries, fresh);
         s.base = base.score;
