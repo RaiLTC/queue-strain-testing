@@ -9,9 +9,9 @@ import { CALL_SPACING_MS, RETRY_WAITS_MS, cached, initCache, isTransient, knownM
 import { STRAIN_CAP } from './rules/fatigue.js';
 
 const DB = 'queue-strain', STORE = 'library';
-export const LIBRARY_TOP = 15;
+export const LIBRARY_TOP = 100;
 /** Most confirming simulations for one skill: a list that keeps falling apart stops here. */
-const CONFIRM_CAP = 30;
+const CONFIRM_CAP = 150;
 const openDb = () => new Promise((ok, no) => {
   const q = indexedDB.open(DB, 1);
   q.onupgradeneeded = () => { if (!q.result.objectStoreNames.contains(STORE)) q.result.createObjectStore(STORE); };
