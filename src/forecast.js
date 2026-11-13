@@ -24,6 +24,10 @@ export const CALL_SPACING_MS = SETTINGS.callSpacingMs;
 export const MAX_PLAYS = 3000;
 
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// Long runs of answers already known come back without ever letting the game draw a frame: every ~10ms, step aside
+// for a moment so the game stays smooth.
+let lastYield = 0;
+export const breathe = async () => { const now = performance.now(); if (now - lastYield > 10) { await new Promise(r => setTimeout(r, 0)); lastYield = performance.now(); } };
 // One limit for every simulator call the add-on makes, from anywhere (scans, Suggestions, the library, all at once):
 // at most one every CALL_SPACING_MS and 1,100 a minute, under the server's 1,200 a minute a player. A busy answer
 // (429) pauses them all for as long as the server asks.
@@ -203,7 +207,16 @@ const playLevelOf = (level, xp, lifetimeXp, prestige = 0) => { const lt = xpGive
 /** How much of a physical skill's level is there to play with, tired and warmed up as it is (shared fatigue.ts). */
 const keptShare = (level, fatigue, warm = 1) => lerp(1, 0.25, fatigue) * lerp(lerp(1, 0.5, Math.min(1, level / 100)), 1, warm);
 const xpToLevel = (level) => { let t = 0; for (let i = 0; i < level; i++) t += xpForLevel(i); return t; };
+const levelsMemo = new Map();
 const officialLevels = (skills, minutes, rested = false) => {
+  const mk = `${rested ? 1 : 0}|${Math.round(minutes * 10)}|${GAME_SKILLS.map(n => { const s = skills[n] || {}; return `${s.level}:${s.xp}:${s.lifetime_xp}:${s.prestige}`; }).join(',')}|${num(skills.stamina && skills.stamina.upgrades)}`;
+  if (levelsMemo.has(mk)) return levelsMemo.get(mk);
+  if (levelsMemo.size > 5000) levelsMemo.clear();
+  const v = officialLevelsNow(skills, minutes, rested);
+  levelsMemo.set(mk, v);
+  return v;
+};
+const officialLevelsNow = (skills, minutes, rested = false) => {
   const restedOnly = rested;
   const fatigue = fatigueLevel(minutes), warm = warmup(minutes, num(skills.stamina && skills.stamina.upgrades));
   return GAME_SKILLS.map((name) => {
@@ -755,6 +768,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   let loopSec = 0, loopDrift = 0;
   for (let i = 0; t < endSec && plays.length < MAX_PLAYS; i++) {
     if (token !== scanToken) throw new Error('stopped');
+    await breathe();
     const at = i < first.length ? first[i] : loop[(i - first.length) % loop.length];
     const entry = queue.entries[at];
     const before = restedFatigue(fatigue, t * 1000, genes, gear);

@@ -1441,11 +1441,11 @@ export const mount = (meta, host) => {
         <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
           <div class="qs-h" style="margin:0;">Library</div>
           <span class="qs-dim">The best maps per skill from plays that already exist (the official sim's at levels within 3 of yours, this add-on's, and yours), each confirmed with one simulation at your levels.</span>
-          ${libRun ? `<button type="button" class="qs-plain qs-lib-stop" style="margin-left:auto;">Stop</button><span class="qs-dim">${esc(libRun.phase || 'Starting')}${libRun.skill ? ` · ${SKILL_NAMES[libRun.skill]}` : ''} · ${num(libRun.calls)} simulations</span>` : `<button type="button" class="qs-plain qs-lib-run" style="margin-left:auto;">${libSaved ? 'Refresh' : 'Build library'}</button>`}
+          <span class="qs-dim" style="margin-left:auto;">Built and refreshed from the Suggestions tab.</span>
         </div>
         ${libSaved ? (() => { const list = (libSaved.lists || {})[libSkill] || [], f = (medals.ok ? medals.multiplier : 1) * (libSkill === 'all' ? 1 : geneOf(libSkill));
           return `<div class="qs-row" style="gap:6px; margin:6px 0 2px;"><span class="qs-dim">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${[['all', 'Most XP (all skills)'], ...SKILLS.map(sk => [sk, SKILL_NAMES[sk]])].map(([v, l]) => `<option value="${v}"${v === libSkill ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="qs-dim">top ${LIBRARY_TOP} · ${new Date(libSaved.at).toLocaleString()} · ${num(libSaved.calls)} simulations</span></div>
-            ${list.length ? `<ol style="margin:0 0 0 22px; padding:0;">${list.map(x => `<li>${esc(x.title)} <span class="qs-dim">${x.rate}× · ${esc(x.source)}</span> <b>${fmt(x.perMin * f)}</b><span class="qs-dim">/min</span> ${x.sure ? '<span style="color:#4ade80;" title="Simulated at your exact levels">✓</span>' : '<span class="qs-dim" title="Not confirmed yet">≈</span>'}</li>`).join('')}</ol>` : '<div class="qs-dim">No plays for this skill yet.</div>'}`; })() : ''}
+            ${list.length ? `<ol style="margin:0 0 0 22px; padding:0; max-height:${20 * 19}px; overflow-y:auto;">${list.map(x => `<li>${esc(x.title)} <span class="qs-dim">${x.rate}× · ${esc(x.source)}</span> <b>${fmt(x.perMin * f)}</b><span class="qs-dim">/min</span> ${x.sure ? '<span style="color:#4ade80;" title="Simulated at your exact levels">✓</span>' : '<span class="qs-dim" title="Not confirmed yet">≈</span>'}</li>`).join('')}</ol>` : '<div class="qs-dim">No plays for this skill yet.</div>'}`; })() : ''}
       </div>`;
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
@@ -1454,6 +1454,8 @@ export const mount = (meta, host) => {
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: suggestions keep you within Peak once you've reached it. On: they may go into Pushing, never past the XP cut."><input id="qs-sg-pastpeak" type="checkbox"${sgPastPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow past Peak</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: once you've reached Peak, suggestions keep you from dropping back below it (Warming Up, Cold). On: they may let you cool down below Peak."><input id="qs-sg-belowpeak" type="checkbox"${sgBelowPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow below Peak</label>
           ${sg && sg.running ? `<span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>${sg ? `<span class="qs-dim">Done · ${num(sg.done)} queues checked</span>` : ''}`}
+          <span class="qs-dim" style="margin-left:auto;" title="The best maps per skill from plays that already exist (shared sim cache, the official sim, this add-on, yours), each confirmed with one simulation at your levels. The lists are in Debug → Library.">Library${libSaved ? ` · ${new Date(libSaved.at).toLocaleDateString()}` : ''}</span>
+          ${libRun ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">${esc(libRun.phase || 'Starting')}${libRun.skill ? ` · ${SKILL_NAMES[libRun.skill]}` : ''} · ${num(libRun.calls)} simulations</span>` : `<button type="button" class="qs-plain qs-lib-run">${libSaved ? 'Refresh' : 'Build library'}</button>`}
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px;" title="Ticked skills: suggestions get them the most XP they can, whatever the others get. None ticked: the most XP in all."><span class="qs-dim">Focus on</span>${SKILLS.map(sk => `<label class="qs-dim" style="display:flex; align-items:center; gap:3px;"><input class="qs-sg-focus" data-sk="${sk}" type="checkbox"${sgFocus.includes(sk) ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;">${SKILL_NAMES[sk]}</label>`).join('')}</div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
@@ -1685,7 +1687,7 @@ export const mount = (meta, host) => {
       try {
         const out = await buildLibrary({ api: ctx.api, row: ctx.row, rates, mods: ctx.mods, minutes, bonus: (sk) => (medals.ok ? medals.multiplier : 1) * geneOf(sk),
           stopped: () => !libRun || libRun.stop,
-          onProgress: (pr) => { Object.assign(libRun, pr); if (Date.now() - drawn > 600 && activeTab === 'debug' && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
+          onProgress: (pr) => { Object.assign(libRun, pr); if (Date.now() - drawn > 1000 && (activeTab === 'debug' || activeTab === 'suggest') && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
         if (out && !(libRun && libRun.stop)) libSaved = out;
       } catch (e) { logProblem('library', e); }
       libRun = null;
@@ -1719,7 +1721,7 @@ export const mount = (meta, host) => {
       renderResult(...lastResult);
       const alive = () => tok === scanToken && lastResult[3] === r;
       let drawnAt = 0;
-      const draw = () => { if (alive() && activeTab === 'suggest' && Date.now() - drawnAt > 400) { drawnAt = Date.now(); renderResult(...lastResult); } };
+      const draw = () => { if (alive() && activeTab === 'suggest' && Date.now() - drawnAt > 1000) { drawnAt = Date.now(); renderResult(...lastResult); } };
       const keyOf = (es) => es.map(e => `${e.beatmapId}@${e.lockedRate ?? ''}x${e.repeat}`).join('|');
       /** A queue's worth: its XP an hour; one that goes past Peak (or the XP cut, allowed past Peak) is out. */
       const measure = (res) => {
@@ -1830,13 +1832,15 @@ export const mount = (meta, host) => {
         };
         // one pass of single changes, then the best of them combined, up to 3
         let cur = { entries: queue.entries, steps: [], m: base.m, res: base.res };
-        for (let step = 1; step <= 3 && alive(); step++) {
-          s.note = `Step ${step} of 3 · ${s.done} queues checked`;
+        for (let step = 1; step <= 6 && alive(); step++) {
+          // steps 4-6: polishing, a second pass from what the first three found
+          const stepNote = () => (step <= 3 ? `Step ${step} of 3 · ${s.done} queues checked` : `Polishing (${step - 3} of 3) · ${s.done} queues checked`);
+          s.note = stepNote();
           let best = null;
           rateFrom(cur.res, cur.entries);
           // the step's changes, up to 8 forecast at once (independent of each other), then looked at in order
           const moves = movesOf(cur.entries);
-          const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.note = `Step ${step} of 3 · ${s.done} queues checked`; draw(); return ev; }), 8);
+          const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.note = stepNote(); draw(); return ev; }), 8);
           for (let mi = 0; mi < moves.length; mi++) {
             const mv = moves[mi], ev = evs[mi];
             if (!ev || !alive()) break;
