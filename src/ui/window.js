@@ -96,8 +96,8 @@ export const mount = (meta, host) => {
   /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
   /** The whole-library scan: running, its progress, and the saved results for the character as it is. */
   let libScan = null, libSaved = null, libFor = '', libSkill = 'speed';
-  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false, sgPastPeak = false;
-  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; sgPastPeak = !!sv.pastPeak; } catch (_) {}
+  let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false, sgPastPeak = false, sgMode = 'regular';
+  try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; sgPastPeak = !!sv.pastPeak; if (['regular', 'overall', 'routes', 'prestige'].includes(sv.mode)) sgMode = sv.mode; } catch (_) {}
   try {
     const saved = JSON.parse(localStorage.getItem('queue-strain:prefs') || '{}');
     if (saved.hours) hoursInput.value = wholeHours(saved.hours);
@@ -1418,12 +1418,14 @@ export const mount = (meta, host) => {
       const row = (label, sec, digits) => `<span class="qs-dim">${label}</span> ${digits ? per(before, sec).toFixed(digits) : fmt(per(before, sec))} <span class="qs-dim">→</span> <b>${digits ? per(after, sec).toFixed(digits) : fmt(per(after, sec))}</b>`;
       return `<div class="qs-sg-rates">${row('XP/h', 3600)}<br>${row('XP/m', 60)}<br>${row('XP/s', 1, 1)}</div>`;
     };
+    /** A mode's time: hours and minutes up to a day, then days. */
+    const sgTime = (t) => (!isFinite(t) ? '–' : t < 86400 ? durH(t) : `${Math.floor(t / 86400)}d ${Math.round((t % 86400) / 3600)}h`);
     const sgPct = (v, base) => { const d = base > 0 ? v / base - 1 : 0; return `<span style="color:${d > 0.002 ? '#4ade80' : d < -0.002 ? '#f87171' : '#9ca3af'}; font-weight:600;">${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%</span>`; };
     const sgBest = !sg || !sg.base ? '' : sg.best.length ? sg.best.map((b, i) => `<div class="qs-card" style="background:#101018; margin-top:8px;">
           <div style="display:flex; gap:8px;"><div><b>${sg.best.length > 1 ? `Option ${i + 1}` : sg.speed === 'quick' ? 'Best single change' : 'Best combination'}</b> · ${b.exact !== undefined ? `${sgPct(b.exactTotal, b.exactBaseTotal)} <span class="qs-dim">${sgXpName(sg)} · checked with the simulator</span>` : `${sgPct(b.total, sg.baseTotal)} <span class="qs-dim">${sgXpName(sg)} · ${sg.fresh ? 'simulated' : 'estimate'}</span>`}</div></div>
           <div style="display:flex; gap:16px; align-items:center;">
             <div style="flex:1; min-width:0;"><ol style="margin:4px 0 0 18px; padding:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol><button type="button" class="qs-plain qs-sg-write" data-i="${i}" style="margin-top:6px;" title="Write this queue into your &quot;${SUGGESTED_PLAYLIST}&quot; (created the first time, replaced each time)">${sg.written === i ? `Written to ${SUGGESTED_PLAYLIST}` : `Write to ${SUGGESTED_PLAYLIST}`}</button></div>
-            <div class="qs-sg-end" title="Your strain now → after the next ${sg.hours} hours with this queue, and the XP over them: your queue as it is → with this option"><div class="qs-dim">After ${sg.hours} hours</div><div class="qs-sg-endstate">${sgEnds(b.exactEnd || b.end)}</div><div style="margin-top:3px;"><span class="qs-dim">XP</span> ${fmt(b.exactBaseTotal ?? sg.baseTotal)} <span class="qs-dim">→</span> <b>${fmt(b.exactTotal ?? b.total)}</b> <span style="color:${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '#4ade80' : '#f87171'};">(${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '+' : '−'}${fmt(Math.abs((b.exactTotal ?? b.total) - (b.exactBaseTotal ?? sg.baseTotal)))})</span></div>${sgRates(b.exactBaseTotal ?? sg.baseTotal, b.exactTotal ?? b.total, sg.hours)}</div>
+            <div class="qs-sg-end" title="Your strain now → after the next ${sg.hours} hours with this queue, and the XP over them: your queue as it is → with this option">${sg.mode && sg.mode !== 'regular' ? `<div style="margin-bottom:4px;"><span class="qs-dim">${{ overall: 'Next overall level', routes: 'Next route upgrades', prestige: 'Prestige' }[sg.mode]}</span><br><span class="qs-dim">${sgTime(sg.baseTime)} →</span> <b style="color:#4ade80;">${sgTime(b.exactTime ?? b.time)}</b></div>` : ''}<div class="qs-dim">After ${sg.hours} hours</div><div class="qs-sg-endstate">${sgEnds(b.exactEnd || b.end)}</div><div style="margin-top:3px;"><span class="qs-dim">XP</span> ${fmt(b.exactBaseTotal ?? sg.baseTotal)} <span class="qs-dim">→</span> <b>${fmt(b.exactTotal ?? b.total)}</b> <span style="color:${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '#4ade80' : '#f87171'};">(${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '+' : '−'}${fmt(Math.abs((b.exactTotal ?? b.total) - (b.exactBaseTotal ?? sg.baseTotal)))})</span></div>${sgRates(b.exactBaseTotal ?? sg.baseTotal, b.exactTotal ?? b.total, sg.hours)}</div>
           </div>
         </div>`).join('') : sg.running ? '' : '<div class="qs-dim" style="margin-top:8px;">No change found that beats your queue as it is.</div>';
     const sgSingles = sg && sg.base && sg.singles.length ? `<div class="qs-dim" style="margin-top:10px;">Each change on its own</div>
@@ -1453,6 +1455,8 @@ export const mount = (meta, host) => {
           <select id="qs-sg-speed" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''} title="Quick: each change on its own. Balanced: the best combination, a step at a time. Thorough: more kinds of change, three queues kept at each step, the best checked with the simulator (takes minutes).">${[['quick', 'Quick'], ['balanced', 'Balanced'], ['thorough', 'Thorough']].map(([v, l]) => `<option value="${v}"${v === sgSpeed ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <span class="qs-dim">Look ahead</span>
           <input id="qs-sg-hours" type="number" min="1" max="48" step="1" value="${sgHours || ctx.hours}" style="width:48px;"${sg && sg.running ? ' disabled' : ''} title="How far ahead the suggestions look, on their own (the window's look-ahead stays as it is)"><span class="qs-dim">h</span>
+          <span class="qs-dim">Mode</span>
+          <select id="qs-sg-mode" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''} title="Regular: most XP for the goal. Overall level: your next overall level soonest (it leads to rebirth). Rush routes: your goal skills' next route upgrades soonest. Rush prestige: their prestige soonest. Every mode buys each upgrade the moment your routes say so.">${[['regular', 'Regular'], ['overall', 'Overall level'], ['routes', 'Rush routes'], ['prestige', 'Rush prestige']].map(([v, l]) => `<option value="${v}"${v === sgMode ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <span class="qs-dim">Goal</span>
           <select id="qs-sg-goal" style="width:auto; field-sizing:content;"${sg && sg.running ? ' disabled' : ''}>${[['all', 'All XP'], ...SKILLS.map(sk => [sk, SKILL_NAMES[sk]])].map(([v, l]) => `<option value="${v}"${v === sgGoal ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <span class="qs-dim" title="The rates the suggestions may try (inside what your Speed upgrades allow). Empty: any.">Rates</span>
@@ -1465,6 +1469,7 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        ${sg && sg.modeNote && !sg.running ? `<div style="margin-top:6px; color:#fca5a5;">${esc(sg.modeNote)}</div>` : ''}
         ${sg && sg.libNote && !sg.running ? `<div class="qs-dim" style="margin-top:6px; font-size:11px;">${esc(sg.libNote)}</div>` : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past ${sg.pastPeak ? 'the XP cut' : 'Peak'}. The suggestions below keep you ${sg.pastPeak ? 'under the XP cut' : 'within Peak'}.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
@@ -1676,7 +1681,7 @@ export const mount = (meta, host) => {
       };
     }
     const sgSpeedSel = outEl.querySelector('#qs-sg-speed'), sgGoalSel = outEl.querySelector('#qs-sg-goal');
-    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh, library: sgLibrary, pastPeak: sgPastPeak })); } catch (_) {} };
+    const sgSave = () => { try { localStorage.setItem('queue-strain:suggest', JSON.stringify({ speed: sgSpeed, goal: sgGoal, history: sgHistory, hours: sgHours, rateMin: sgRateMin, rateMax: sgRateMax, fresh: sgFresh, library: sgLibrary, pastPeak: sgPastPeak, mode: sgMode })); } catch (_) {} };
     if (sgSpeedSel) sgSpeedSel.onchange = () => { sgSpeed = sgSpeedSel.value; sgSave(); };
     if (sgGoalSel) sgGoalSel.onchange = () => { sgGoal = sgGoalSel.value; sgSave(); };
     const sgHoursIn = outEl.querySelector('#qs-sg-hours');
@@ -1684,6 +1689,8 @@ export const mount = (meta, host) => {
     const rateIn = (el, set) => { if (el) el.onchange = () => { const v = Math.round(num(el.value) * 20) / 20; set(v >= 0.5 && v <= 1.5 ? v : 0); el.value = v >= 0.5 && v <= 1.5 ? v.toFixed(2) : ''; sgSave(); }; };
     rateIn(outEl.querySelector('#qs-sg-rmin'), (v) => { sgRateMin = v; });
     rateIn(outEl.querySelector('#qs-sg-rmax'), (v) => { sgRateMax = v; });
+    const sgModeSel = outEl.querySelector('#qs-sg-mode');
+    if (sgModeSel) sgModeSel.onchange = () => { sgMode = sgModeSel.value; sgSave(); };
     const sgPeakBox = outEl.querySelector('#qs-sg-pastpeak');
     if (sgPeakBox) sgPeakBox.onchange = () => { sgPastPeak = sgPeakBox.checked; sgSave(); };
     const sgLibBox = outEl.querySelector('#qs-sg-library');
@@ -1726,9 +1733,9 @@ export const mount = (meta, host) => {
     if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
     if (sgBtn) sgBtn.onclick = async () => {
-      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, useLibrary = sgLibrary, pastPeak = sgPastPeak, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
+      const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, useLibrary = sgLibrary, pastPeak = sgPastPeak, mode = sgMode, fresh = sgFresh, rMin = sgRateMin || 0.5, rMax = sgRateMax || 1.5, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
       const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
-      const s = r.suggest = { hours: H, fresh, pastPeak, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
+      const s = r.suggest = { hours: H, fresh, pastPeak, mode, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
       let drawnAt = 0;
       const draw = (force) => { if (lastResult[3] === r && activeTab === 'suggest' && (force || Date.now() - drawnAt > 400)) { drawnAt = Date.now(); renderResult(...lastResult); } };
       const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
@@ -1759,7 +1766,29 @@ export const mount = (meta, host) => {
         const blockEnd = lateN ? lateBlock / lateN : 1;
         // a queue past the cut ranks below every one that isn't, the less time past it the better
         const rank = crossed ? -1 - (min ? cut / min : 0) : (xp / H) * (0.9 + 0.1 * blockEnd);
-        return { total: xp, score: rank, crossed, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
+        // the routes, as the player follows them: each upgrade bought the moment its route level comes
+        const rows0 = ctx.row, routesNow = readRoutes() || {};
+        const simOf = (sk) => { const prestige = num(rows0[`${sk}Prestige`]), gene = genetics[sk];
+          return simulateRoute({ plays: res.plays, gainOf: q => xpOf(q, sk), L0: Math.floor(num(rows0[sk])), x0: num(rows0[`${sk}XP`]), upgrades: num(rows0[`${sk}Upgrades`]), overdrive: num(rows0[`${sk}Overdrive`]),
+            prestige, route: routesNow[prestige] || [], odPct: gene ? 5 * num(gene.odGene) * num(gene.strength) : 0, need: 100 + prestige, basePerH: perHour(q => xpOf(q, sk), res.plays), spanSec: H * 3600 }); };
+        const goalSkills = goal === 'all' ? SKILLS : [goal];
+        let time;
+        let score2 = rank;
+        if (!crossed && mode !== 'regular') {
+          if (mode === 'overall') {
+            // every skill's XP with the route's multipliers, against what the next overall level needs
+            const routed = SKILLS.reduce((t, sk) => { const sm = simOf(sk); return t + res.plays.reduce((u, q) => u + xpOf(q, sk) * (sm.ratioOf.get(q) ?? 1), 0); }, 0);
+            const lifetime = SKILLS.reduce((t, sk) => t + num(rows0[`${sk}LifetimeXp`]), 0), lt = gainLevels(0, 0, lifetime);
+            const need = Math.max(1, xpForLevel(lt.level) - lt.xp);
+            time = routed > 0 ? need / (routed / (H * 3600)) : Infinity;
+          } else {
+            // the goal skills' next route upgrade, or their prestige: on average, when
+            const ts = goalSkills.map(sk => { const sm = simOf(sk); return mode === 'routes' ? (sm.events[0] ? sm.events[0].at : Infinity) : sm.readySec; }).filter(t => isFinite(t));
+            time = ts.length ? ts.reduce((a, b) => a + b, 0) / ts.length : Infinity;
+          }
+          score2 = isFinite(time) && time > 0 ? 3600 / time * 1e6 * (0.9 + 0.1 * blockEnd) : 0;
+        }
+        return { total: xp, score: score2, time, crossed, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const pc = (v) => `${Math.round(v * 100)}%`;
       const whyOf = (m, bm, c, bc) => (c && !bc ? (pastPeak ? 'Goes past the XP cut' : 'Goes past Peak') : bc && !c ? (pastPeak ? 'Stays under the XP cut' : 'Stays within Peak') : bm.cut - m.cut >= 0.03 ? `Less time past the XP cut (${pc(bm.cut)} → ${pc(m.cut)})`
@@ -1859,6 +1888,8 @@ export const mount = (meta, host) => {
         s.base = base.score;
         s.baseEnd = base.end;
         s.baseTotal = base.total;
+        s.baseTime = base.time;
+        if (mode !== 'regular' && !isFinite(base.time)) s.modeNote = mode === 'routes' ? "No route upgrade ahead for these skills: Rush routes needs routes from Gemini's level up sim." : mode === 'prestige' ? "These skills don't reach prestige in the forecast, even kept up." : "Your overall level can't be worked out from this character.";
         s.baseCrossed = base.crossed;
         s.startBar = num((r.samples[0] || {}).bar);
         let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
@@ -1870,7 +1901,7 @@ export const mount = (meta, host) => {
             const key = keyOf(mv.entries);
             if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
             const ev = await evalQ(mv.entries, fresh);
-            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, crossed: ev.crossed, parent: f.score, m: ev.m, end: ev.end });
+            cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, time: ev.time, crossed: ev.crossed, parent: f.score, m: ev.m, end: ev.end });
             s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
             if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, total: c.total, crossed: c.crossed, why: whyOf(c.m, base.m, c.crossed, base.crossed), end: c.end }));
             draw();
@@ -1878,7 +1909,7 @@ export const mount = (meta, host) => {
           all.push(...cands);
           // library maps that didn't help on their own aren't tried again in later steps
           if (step === 1) { const kept = new Set(cands.filter(c => c.steps[0].kind === 'add' && c.score > base.score * 1.002).map(c => c.entries[c.entries.length - 1].beatmapId)); extra = extra.filter(h => !h.history.library || kept.has(h.beatmapId)); }
-          s.best = all.filter(c => !c.crossed && (base.crossed || c.score > base.score * 1.002)).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, total: c.total, entries: c.entries, end: c.end }));
+          s.best = all.filter(c => !c.crossed && (base.crossed || c.score > base.score * 1.002)).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, total: c.total, time: c.time, entries: c.entries, end: c.end }));
           // only what beats the queue it came from goes on to the next step
           frontier = cands.filter(c => c.score > c.parent * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.width);
           if (!frontier.length) break;
@@ -1890,7 +1921,7 @@ export const mount = (meta, host) => {
           for (const b of s.best) {
             if (!alive()) break;
             const ex = await evalQ(b.entries, true);
-            b.exact = ex.score; b.exactTotal = ex.total; b.exactEnd = ex.end;
+            b.exact = ex.score; b.exactTotal = ex.total; b.exactEnd = ex.end; b.exactTime = ex.time;
             b.exactBase = exactBase.score; b.exactBaseTotal = exactBase.total;
             draw(true);
           }
