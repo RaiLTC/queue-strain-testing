@@ -340,13 +340,18 @@ export async function forecast(queue, ctx, onProgress, token) {
   /** One run: a play is random, so each run is asked for and kept on its own (run 0 as before runs existed). */
   /** Diagnostics: the simulator's calls this scan: time spent, the slowest, busy answers retried, failures. */
   const simStats = { ms: 0, slowest: 0, busy: 0, failed: 0 };
+  /** Where a forecast's time goes (for the Suggestions' timing line): exact cache hits, building the index of
+   *  stored answers, nearest-answer lookups, new simulator calls. */
+  const timing = { exact: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0 };
   const askRun = async (asOwner, asSkills, beatmapId, r, m, bucket, playsKey, run) => {
     const key = `${beatmapId}|${r}|${[...m].sort().join('')}|${bucket}|${playsKey}${run ? `|#${run}` : ''}`;
     const kept = cached(asOwner, key);
-    if (kept) { fromCache++; return { answer: kept, fresh: false }; }
+    if (kept) { fromCache++; timing.exact++; return { answer: kept, fresh: false }; }
     if (approxOn) {
-      if (!approxIndex) approxIndex = answerIndex(num(row.id));
+      if (!approxIndex) { const t0 = performance.now(); approxIndex = answerIndex(num(row.id)); timing.indexMs += performance.now() - t0; timing.indexBuilds++; }
+      const t1 = performance.now();
       const near = nearestAnswer(approxIndex, asOwner, beatmapId, r, m, bucket, playsKey, run || 0);
+      timing.nearMs += performance.now() - t1; timing.near++;
       if (near) { fromCache++; return { answer: near, fresh: false, approx: true }; }
     }
     const askKey = `${asOwner}|${key}`;
@@ -387,6 +392,7 @@ export async function forecast(queue, ctx, onProgress, token) {
           }
         }
         calls++;
+        timing.calls++;
         onProgress(progress());
         remember(asOwner, key, answer);
         return answer;
@@ -509,6 +515,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   skills = startSkills;
   owner = startOwner;
   return {
+    timing: { ...timing, simMs: simStats.ms },
     plays, samples, knots, loopSec, loopDrift, loopPlays: loop.length, loopStart: loopFrom ? loopFrom.plays : 0, memory, memoryLocal, triesFrom, calib, medals, genetics, recentStart, recentByMap, simStats, runs,
     simulate, counts: () => ({ calls, fromCache }), useToken: (t) => { runToken = t; },
     /** A quick update keeps borrowing stored answers through the Speed Jam / Memory curves, then stops. */

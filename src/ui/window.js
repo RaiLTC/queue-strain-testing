@@ -1417,6 +1417,7 @@ export const mount = (meta, host) => {
           ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
+        ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
         ${sgBest}
         ${sgSingles}
       </div>`;
@@ -1633,7 +1634,7 @@ export const mount = (meta, host) => {
     if (sgBtn) sgBtn.onclick = async () => {
       const tok = scanToken, speed = sgSpeed, goal = sgGoal;
       const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
-      const s = r.suggest = { running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [] };
+      const s = r.suggest = { running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
       let drawnAt = 0;
       const draw = (force) => { if (lastResult[3] === r && activeTab === 'suggest' && (force || Date.now() - drawnAt > 400)) { drawnAt = Date.now(); renderResult(...lastResult); } };
       const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
@@ -1664,7 +1665,14 @@ export const mount = (meta, host) => {
       const seen = new Map();
       const evalQ = async (entries, exact) => {
         const k = `${exact ? 'E' : 'Q'}${keyOf(entries)}`;
-        if (!seen.has(k)) { seen.set(k, measure(await forecast({ ...queue, entries }, { ...ctx, quick: !exact }, () => {}, tok))); s.done++; }
+        if (!seen.has(k)) {
+          const t0 = performance.now();
+          const res = await forecast({ ...queue, entries }, { ...ctx, quick: !exact }, () => {}, tok);
+          const T = s.timing, ft = res.timing || {};
+          T.total += performance.now() - t0; T.forecasts++;
+          for (const f of ['exact', 'indexMs', 'indexBuilds', 'nearMs', 'near', 'calls', 'simMs']) T[f] += num(ft[f]);
+          seen.set(k, measure(res)); s.done++;
+        }
         return seen.get(k);
       };
       /** Every queue one change away: a map out, a repeat more (Thorough: two more) or less, two maps swapped
@@ -1725,6 +1733,7 @@ export const mount = (meta, host) => {
         }
       } catch (e) { s.error = `Couldn't finish: ${e && e.message ? e.message : e}`; }
       s.running = false;
+      s.wall = performance.now() - s.startedAt;
       if (lastResult[3] === r) renderResult(...lastResult);
     };
     const diagCopy = outEl.querySelector('.qs-diag-copy');
