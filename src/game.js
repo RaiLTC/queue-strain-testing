@@ -115,6 +115,12 @@ const PHYSICAL_GOALS = new Set(['speed', 'stamina', 'jackspeed', 'coordination',
 /** Maps from the whole library worth simulating for `goal`: every 4K map in the game's catalog (the server's, so
  *  current), without the ones in the queue, the ones harder than you've passed
  *  lately, and the ones that can't give the goal skill anything at all; ranked for the goal, the best `limit`. */
+/** Every 4K map in the catalog: id, name, stars and length (seconds at 1x). */
+export const catalogEntries = async () => {
+  const names = await mapNames();
+  return Object.keys(catalogInfo).map(Number).filter(id => catalogInfo[id].mode === 3 && catalogInfo[id].keys === 4 && catalogLen[id] > 0)
+    .map(id => ({ id, title: names[id] || `Map ${id}`, stars: num(catalogStars[id]), lengthSec: catalogLen[id] }));
+};
 /** The last library pick: maps considered, and how many were ruled out by their proven ceiling. */
 export const libraryStats = { considered: 0, provenOut: 0, bar: 0, broken: 0 };
 export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12, known = new Map() } = {}) {

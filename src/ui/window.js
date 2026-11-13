@@ -1,6 +1,7 @@
 // The window: mount, the options, scanning, and every tab.
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
+import { loadLibrary, listsOf, scanLibrary } from '../library.js';
 import { cached, knownMaps, ownerOf, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, libraryStats, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
@@ -93,6 +94,8 @@ export const mount = (meta, host) => {
   /** Debug's every-play section: one table of all plays, or one map's plays at a time as a card. */
   let debugView = 'table', debugMap = 0;
   /** Suggestions: how hard to look (quick, balanced, thorough) and what for (all XP, or one skill's). */
+  /** The whole-library scan: running, its progress, and the saved results for the character as it is. */
+  let libScan = null, libSaved = null, libFor = '', libSkill = 'speed';
   let sgSpeed = 'balanced', sgGoal = 'all', sgHistory = false, sgHours = 0, sgRateMin = 0, sgRateMax = 0, sgFresh = false, sgLibrary = false, sgPastPeak = false;
   try { const sv = JSON.parse(localStorage.getItem('queue-strain:suggest') || '{}'); if (['quick', 'balanced', 'thorough'].includes(sv.speed)) sgSpeed = sv.speed; if (sv.goal === 'all' || SKILLS.includes(sv.goal)) sgGoal = sv.goal; sgHistory = !!sv.history; sgHours = Math.max(0, Math.min(48, Math.round(num(sv.hours)))); sgRateMin = num(sv.rateMin); sgRateMax = num(sv.rateMax); sgFresh = !!sv.fresh; sgLibrary = !!sv.library; sgPastPeak = !!sv.pastPeak; } catch (_) {}
   try {
@@ -1448,6 +1451,17 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        <div class="qs-card" style="background:#101018; margin-top:8px;">
+          <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
+            <b>Library</b>
+            ${libScan ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">Scanning: ${libScan.done.toLocaleString()} of ${libScan.total.toLocaleString()} map-rates · ${libScan.skipped.toLocaleString()} ruled out by their XP ceiling · ${libScan.calls.toLocaleString()} simulator calls</span>` : `<button type="button" class="qs-plain qs-lib-run" title="Plays every 4K map in the game's catalog at every rate you allow (your rate range and Speed upgrades), once each at the middle of Peak, on the game's server. Maps that provably can't reach a top list are skipped. Saved for your current levels; a second run only adds what's missing.">${libSaved ? 'Continue / refresh library scan' : 'Scan whole library'}</button>`}
+            ${libSaved ? `<span class="qs-dim">${libSaved.results.length.toLocaleString()} map-rates played${libSaved.at ? `, ${new Date(libSaved.at).toLocaleString()}` : ''}</span>
+              <span class="qs-dim" style="margin-left:auto;">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${SKILLS.map(sk => `<option value="${sk}"${sk === libSkill ? ' selected' : ''}>${SKILL_NAMES[sk]}</option>`).join('')}</select>` : ''}
+          </div>
+          ${libSaved ? (() => { const L = listsOf(libSaved.results)[libSkill]; const f = (medals.ok ? medals.multiplier : 1) * geneOf(libSkill);
+            const col = (title, rows) => `<div style="flex:1; min-width:220px;"><div class="qs-dim" style="margin:6px 0 2px;">${title}</div>${rows.length ? `<ol style="margin:0 0 0 18px; padding:0;">${rows.map(x => `<li title="${esc(x.title)} · ${x.rate}× · ${x.stars.toFixed(2)}★ · strains ${Math.round(x.strained * 100)}% of its length">${esc(x.title)} <span class="qs-dim">${x.rate}×</span> <b>${fmt(x.perMin[libSkill] * f)}</b><span class="qs-dim">/min</span></li>`).join('')}</ol>` : '<div class="qs-dim">None yet.</div>'}</div>`;
+            return `<div style="display:flex; gap:12px; flex-wrap:wrap;">${col('Top 10', L.top)}${col('Top cooldowns (strain falls)', L.cools)}${col('Top warmers (strain rises)', L.warms)}</div>`; })() : ''}
+        </div>
         ${sg && sg.libNote && !sg.running ? `<div class="qs-dim" style="margin-top:6px; font-size:11px;">${esc(sg.libNote)}</div>` : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past ${sg.pastPeak ? 'the XP cut' : 'Peak'}. The suggestions below keep you ${sg.pastPeak ? 'under the XP cut' : 'within Peak'}.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
@@ -1682,6 +1696,29 @@ export const mount = (meta, host) => {
       try { await writeSuggestedPlaylist(ctx.row, opt.entries); r.suggest.written = Number(btn.dataset.i); renderResult(...lastResult); }
       catch (e) { btn.disabled = false; btn.textContent = `Couldn't write: ${e && e.message ? e.message : e}`; }
     };
+    // the library: load what's saved for this character's levels, then draw again with it
+    { const key = JSON.stringify([ctx.row.id, SKILLS.map(sk => [ctx.row[sk], ctx.row[`${sk}LifetimeXp`], ctx.row[`${sk}Prestige`], ctx.row[`${sk}Upgrades`]])]);
+      if (libFor !== key) { libFor = key; libSaved = null; void loadLibrary(ctx.row).then(v => { if (v && libFor === key) { libSaved = v; if (activeTab === 'suggest' && lastResult) renderResult(...lastResult); } }); } }
+    const libSkillSel = outEl.querySelector('#qs-lib-skill');
+    if (libSkillSel) libSkillSel.onchange = () => { libSkill = libSkillSel.value; renderResult(...lastResult); };
+    const libStop = outEl.querySelector('.qs-lib-stop');
+    if (libStop) libStop.onclick = () => { if (libScan) libScan.stop = true; };
+    const libRun = outEl.querySelector('.qs-lib-run');
+    if (libRun) libRun.onclick = async () => {
+      const speedUps = num(ctx.row.speedUpgrades), lo = Math.max(0.5, 1 - 0.05 * speedUps, sgRateMin || 0), hi = Math.min(1.5, 1 + 0.05 * speedUps, sgRateMax || 2);
+      const rates = []; for (let x = Math.round(lo * 20); x <= Math.round(hi * 20); x++) rates.push(Math.round(x * 5) / 100);
+      const k = r.knots || [], minutes = k.length > 2 ? (num(k[1]) + num(k[2])) / 2 : 120;
+      libScan = { done: 0, total: 0, skipped: 0, calls: 0, stop: false };
+      renderResult(...lastResult);
+      let drawn = 0;
+      try {
+        await scanLibrary({ api: ctx.api, row: ctx.row, rates, mods: ctx.mods, minutes, stopped: () => !libScan || libScan.stop,
+          onProgress: (pr) => { Object.assign(libScan, pr); if (Date.now() - drawn > 700 && activeTab === 'suggest' && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
+      } catch (e) { logProblem('library', e); }
+      libSaved = await loadLibrary(ctx.row);
+      libScan = null;
+      if (lastResult) renderResult(...lastResult);
+    };
     const sgStop = outEl.querySelector('.qs-suggest-stop');
     if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
@@ -1792,7 +1829,17 @@ export const mount = (meta, host) => {
       } catch (_) {}
       try {
         if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId), { easy: 3 }); }
-        if (useLibrary) {
+        if (useLibrary && libSaved && libSaved.results.length) {
+          // the saved library scan: your goal's top performers, and the best that cool down and warm up
+          const L = listsOf(libSaved.results), sks = goal === 'all' ? SKILLS : [goal], take = goal === 'all' ? [3, 1, 1] : [10, 3, 3];
+          const picked = new Map();
+          for (const sk of sks) for (const [list, nTake] of [[L[sk].top, take[0]], [L[sk].cools, take[1]], [L[sk].warms, take[2]]]) for (const x of list.slice(0, nTake)) {
+            if (queue.entries.some(e => e.beatmapId === x.id) || picked.has(`${x.id}@${x.rate}`) || x.rate < rMin - 1e-9 || x.rate > rMax + 1e-9) continue;
+            picked.set(`${x.id}@${x.rate}`, { beatmapId: x.id, title: x.title, lockedRate: x.rate, lockedMods: ctx.mods, repeat: 1, played: 0, lengthSec: x.minutes * 60 * x.rate, history: { perMin: sks.reduce((t, s2) => t + num(x.perMin[s2]), 0), plays: 0, stars: x.stars, library: true, role: x.role } });
+          }
+          extra = [...extra, ...picked.values()];
+          s.libNote = `Library: ${picked.size} top performers from your saved scan`;
+        } else if (useLibrary) {
           s.note = 'Picking maps from your library'; draw(true);
           const speedUps = num(ctx.row.speedUpgrades), libRate = Math.min(Math.max(num(ctx.rate) || 1, rMin, Math.max(0.5, 1 - 0.05 * speedUps)), rMax, Math.min(1.5, 1 + 0.05 * speedUps));
           const lib = await libraryMaps(ctx.row, [...queue.entries, ...extra].map(e => e.beatmapId), { goal, rate: Math.round(libRate * 100) / 100, mods: ctx.mods, limit: { quick: 6, balanced: 12, thorough: 25 }[speed], known: knownMaps(ownerOf(ctx.row)) });
