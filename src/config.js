@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.4.04';
-export const VERSION_ID = '2026-11-13 15H13M';
+export const VERSION = '1.4.05';
+export const VERSION_ID = '2026-11-13 15H46M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -48,7 +48,8 @@ export const HOTFIXES = {
   text: `v${VERSION} · 13 Nov 2026
 • Fixed memory building up while scanning, which could slow or crash the game
 • Suggestions: checks its pick exactly, XP comparison, progress bar and Stop button
-• Faster scans and Suggestions`,
+• Faster scans and Suggestions
+• Smoother while finding suggestions; shows what it's waiting for`,
 };
 
 // ---------------------------------------------------------------------

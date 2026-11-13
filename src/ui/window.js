@@ -4,6 +4,7 @@ import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
 import { pool } from '../forecast.js';
 import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, sharedStats, SHARED_CACHE_URL, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
+import { logPerf, perfLog, waitingText, watchFrames } from '../game.js';
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -564,7 +565,7 @@ export const mount = (meta, host) => {
     }
     setScanning(true);
     setStatus(why);
-    const scanStarted = Date.now();
+    const scanStarted = Date.now(), framesOf = watchFrames();
     const fail = (msg) => { logProblem('scan', msg); if (token === scanToken) { outEl.innerHTML = `<div class="qs-err">${esc(msg)}</div>`; setStatus(''); } };
     try {
       if (!api || typeof api.simulate !== 'function') throw new Error('This version of the game hands add-ons no simulator: update oss!idle.');
@@ -630,6 +631,7 @@ export const mount = (meta, host) => {
       result.scannedAt = Date.now();
       if (!quick) lastFullAt = result.scannedAt;
       result.scanMs = result.scannedAt - scanStarted;
+      { const c = result.counts ? result.counts() : {}; logPerf('scan', `${quick ? 'quick ' : ''}${(result.scanMs / 1000).toFixed(1)}s · ${result.plays.length} plays · ${num(c.calls)} new simulations, ${num(c.fromCache)} known · ${framesOf()}`); }
       liveNewest = 0;
       renderResult(queue, ctx, now, result);
       // the full window, Strain Status included, once there is a result to show
@@ -1417,6 +1419,9 @@ export const mount = (meta, host) => {
     // performers come only from plays already simulated (this add-on's and the official sim's), never new calls ----
     const sg = r.suggest;
     const sgShort = (t) => esc(t);
+    /** The progress line while Suggestions runs: the step, the changes checked, the queues, and any wait or stall. */
+    const sgProgText = (s) => [s.stop ? 'Stopping' : s.note, s.stepTotal ? `${num(s.stepDone)} of ${num(s.stepTotal)} changes` : '', `${num(s.done)} queues checked`, waitingText(), s.stalled ? `no progress for ${s.stalled}s` : ''].filter(Boolean).join(' · ');
+    const sgSegFrac = (s, i) => (i < s.step ? 1 : i > s.step ? 0 : s.stepTotal ? Math.min(1, s.stepDone / s.stepTotal) : 0);
     const sgText = (st) => (st.kind === 'swap' ? `Swap <b>${sgShort(st.a)}</b> for <b>${sgShort(st.b)}</b> <span class="qs-dim">(${st.rate}×)</span>` : st.kind === 'remove' ? `Drop <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×)</span>`);
     /** The XP that counts: the focus skills' when some are ticked, else all. `x`: the run (base*) or a change. */
     const sgVal = (x) => (sg && sg.focusNames && sg.focusNames.length ? num(x === sg ? sg.baseFocus : x.focusTotal) : num(x === sg ? sg.baseTotal : x.total));
@@ -1475,11 +1480,11 @@ export const mount = (meta, host) => {
         <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: suggestions keep you within Peak once you've reached it. On: they may go into Pushing, never past the XP cut."><input id="qs-sg-pastpeak" type="checkbox"${sgPastPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow past Peak</label>
           <label class="qs-dim" style="display:flex; align-items:center; gap:4px;" title="Off: once you've reached Peak, suggestions keep you from dropping back below it (Warming Up, Cold). On: they may let you cool down below Peak."><input id="qs-sg-belowpeak" type="checkbox"${sgBelowPeak ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;"> Allow below Peak</label>
-          ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim">${esc(sg.stop ? 'Stopping' : sg.note)}${sg.stepTotal ? ` · ${num(sg.stepDone)} of ${num(sg.stepTotal)} changes` : ''} · ${num(sg.done)} queues checked</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>${sg ? `<span class="qs-dim">${sg.stopped ? 'Stopped' : 'Done'} · ${num(sg.done)} queues checked</span>` : ''}`}
+          ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim qs-sg-prog">${esc(sgProgText(sg))}</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>${sg ? `<span class="qs-dim">${sg.stopped ? 'Stopped' : 'Done'} · ${num(sg.done)} queues checked</span>` : ''}`}
           <span class="qs-dim" style="margin-left:auto;" title="The best maps per skill from plays that already exist (shared sim cache, the official sim, this add-on, yours), each confirmed with one simulation at your levels. The lists are in Debug → Library.">Library${libSaved ? ` · ${new Date(libSaved.at).toLocaleDateString()}` : ''}</span>
-          ${libRun ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">${esc(libRun.phase || 'Starting')}${libRun.skill ? ` · ${SKILL_NAMES[libRun.skill]}` : ''} · ${num(libRun.calls)} simulations</span>` : `<button type="button" class="qs-plain qs-lib-run">${libSaved ? 'Refresh' : 'Build library'}</button>`}
+          ${libRun ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">${esc(libRun.phase || 'Starting')}${libRun.skill ? ` · ${SKILL_NAMES[libRun.skill]}` : ''} · ${num(libRun.calls)} simulations${waitingText() ? ` · ${esc(waitingText())}` : ''}</span>` : `<button type="button" class="qs-plain qs-lib-run">${libSaved ? 'Refresh' : 'Build library'}</button>`}
         </div>
-        ${sg && sg.running ? `<div style="display:flex; gap:3px; margin-top:6px;" title="Steps 1-3 look for changes, steps 4-6 polish what they found. It ends early when nothing more helps.">${[1, 2, 3, 4, 5, 6].map(i => { const f = i < sg.step ? 1 : i > sg.step ? 0 : sg.stepTotal ? Math.min(1, sg.stepDone / sg.stepTotal) : 0; return `<div style="flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,0.12); overflow:hidden;"><div style="width:${Math.round(f * 100)}%; height:100%; background:${i <= 3 ? '#60a5fa' : '#a78bfa'};"></div></div>`; }).join('')}</div>` : ''}
+        ${sg && sg.running ? `<div style="display:flex; gap:3px; margin-top:6px;" title="Steps 1-3 look for changes, steps 4-6 polish what they found. It ends early when nothing more helps.">${[1, 2, 3, 4, 5, 6].map(i => { const f = sgSegFrac(sg, i); return `<div style="flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,0.12); overflow:hidden;"><div class="qs-sg-seg" style="width:${Math.round(f * 100)}%; height:100%; background:${i <= 3 ? '#60a5fa' : '#a78bfa'};"></div></div>`; }).join('')}</div>` : ''}
         <div style="display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px;" title="Ticked skills: suggestions get them the most XP they can, whatever the others get. None ticked: the most XP in all."><span class="qs-dim">Focus on</span>${SKILLS.map(sk => `<label class="qs-dim" style="display:flex; align-items:center; gap:3px;"><input class="qs-sg-focus" data-sk="${sk}" type="checkbox"${sgFocus.includes(sk) ? ' checked' : ''}${sg && sg.running ? ' disabled' : ''} style="margin:0;">${SKILL_NAMES[sk]}</label>`).join('')}</div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is ${sg.pastPeak && sg.belowPeak ? 'goes past the XP cut' : 'leaves Peak'}. The suggestions below keep you ${sg.pastPeak && sg.belowPeak ? 'under the XP cut' : 'within your limits'}.</div>` : ''}
@@ -1709,12 +1714,14 @@ export const mount = (meta, host) => {
       libRun = { phase: 'Starting', calls: 0, stop: false };
       renderResult(...lastResult);
       let drawn = 0;
+      const libT0 = Date.now(), libFrames = watchFrames();
       try {
         const out = await buildLibrary({ api: ctx.api, row: ctx.row, rates, mods: ctx.mods, minutes, bonus: (sk) => (medals.ok ? medals.multiplier : 1) * geneOf(sk),
           stopped: () => !libRun || libRun.stop,
           onProgress: (pr) => { Object.assign(libRun, pr); if (Date.now() - drawn > 1000 && (activeTab === 'debug' || activeTab === 'suggest') && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
         if (out && !(libRun && libRun.stop)) libSaved = out;
       } catch (e) { logProblem('library', e); }
+      logPerf('library', `${libRun && libRun.stop ? 'stopped' : 'done'} · ${((Date.now() - libT0) / 1000).toFixed(1)}s · ${num(libRun && libRun.calls)} simulations · ${libFrames()}`);
       libRun = null;
       if (lastResult) renderResult(...lastResult);
     };
@@ -1751,7 +1758,30 @@ export const mount = (meta, host) => {
       const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
       s.step = 0; s.stepDone = 0; s.stepTotal = 0;
       let drawnAt = 0;
-      const draw = () => { if (alive() && activeTab === 'suggest' && Date.now() - drawnAt > 1000) { drawnAt = Date.now(); renderResult(...lastResult); } };
+      // the progress line and bar are updated in place a few times a second; the whole tab only every 5s
+      let paintedAt = 0;
+      const paint = () => {
+        const el = outEl.querySelector('.qs-sg-prog');
+        if (!el) return false;
+        el.textContent = sgProgText(s);
+        outEl.querySelectorAll('.qs-sg-seg').forEach((seg, i) => { seg.style.width = `${Math.round(sgSegFrac(s, i + 1) * 100)}%`; });
+        return true;
+      };
+      const draw = () => {
+        if (!alive() || activeTab !== 'suggest') return;
+        const now = Date.now();
+        if (now - drawnAt > 5000 || (now - paintedAt > 250 && !paint())) { drawnAt = now; renderResult(...lastResult); }
+        if (now - paintedAt > 250) paintedAt = now;
+      };
+      // a stall: nothing moved for 20s (logged once, shown on the progress line)
+      const sgT0 = Date.now(), sgFrames = watchFrames();
+      let moved = { at: Date.now(), mark: '' }, stallLogged = false;
+      const watchdog = setInterval(() => {
+        const mark = `${s.done}|${s.stepDone}|${s.step}`;
+        if (mark !== moved.mark) { moved = { at: Date.now(), mark }; s.stalled = 0; stallLogged = false; }
+        else if (Date.now() - moved.at > 20000) { s.stalled = Math.round((Date.now() - moved.at) / 1000); if (!stallLogged) { stallLogged = true; logPerf('stall', `Suggestions: ${s.note} · ${waitingText() || 'not waiting on anything known'}`); } }
+        if (s.running && activeTab === 'suggest') paint();
+      }, 1000);
       const keyOf = (es) => es.map(e => `${e.beatmapId}@${e.lockedRate ?? ''}x${e.repeat}`).join('|');
       /** A queue's worth: its XP an hour; one that goes past Peak (or the XP cut, allowed past Peak) is out. */
       const measure = (res) => {
@@ -1935,6 +1965,8 @@ export const mount = (meta, host) => {
           else { Object.assign(s.best, { total: em.total, focusTotal: em.focusTotal, end: em.end, checked: true }); s.cmp = { base: bm.skXp, best: em.skXp }; }
         }
       } catch (e) { logProblem('suggest', e); }
+      clearInterval(watchdog);
+      logPerf('suggest', `${s.stop ? 'stopped' : 'done'} · ${((Date.now() - sgT0) / 1000).toFixed(1)}s · ${num(s.done)} queues · steps ${num(s.step)} · ${sgFrames()}`);
       s.running = false;
       s.stopped = !!s.stop;
       sgSinglesOpen = null;
@@ -1951,7 +1983,10 @@ ${debugText()}
 
 == Recent real plays ==
 ${recent.note ? `${recent.note}
-` : ''}${tsv(recent.played)}`;
+` : ''}${tsv(recent.played)}
+
+== Performance log ==
+${perfLog.join('\n') || 'nothing yet'}`;
         diagCopy.textContent = (await copyText(text)) ? 'Copied' : 'Copy failed';
         setTimeout(() => { if (diagCopy.isConnected) diagCopy.textContent = 'Copy Diagnostics'; }, 1500);
       };
