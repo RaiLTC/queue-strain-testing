@@ -74,7 +74,7 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
 
   const perMin = (mr, xp, sk) => { const [id, rate] = mr.split('@').map(Number), e = byId.get(id); const v = sk === 'all' ? SKILLS.reduce((t, s2) => t + num(xp[s2]) * bonus(s2), 0) / bonus('all') : num(xp[sk]); return e ? v / Math.max(0.1, e.lengthSec / rate / 60) : 0; };
   const bucket = Math.min(STRAIN_CAP, strainStep(minutes));
-  let calls = 0, nextCall = 0;
+  let calls = 0;
   /** One simulation at the character's exact levels, mid Peak: confirms a candidate (or drops it, failed). */
   const confirm = async (mr) => {
     const c = cand.get(mr);

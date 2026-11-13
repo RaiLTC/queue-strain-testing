@@ -93,8 +93,9 @@ export const saveCache = () => {
   if (!simCache || !cacheDirty) return;
   // the newest first, up to the cap; old ones (past a day) go
   const now = Date.now();
-  const entries = [...simCache.entries()].filter(([, v]) => now - v.at < CACHE_TTL_MS).sort((a, b) => b[1].at - a[1].at).slice(0, CACHE_MAX);
-  simCache = new Map(entries);
+  let entries = [...simCache.entries()].filter(([, v]) => now - v.at < CACHE_TTL_MS);
+  if (entries.length > CACHE_MAX) entries = entries.sort((a, b) => b[1].at - a[1].at).slice(0, CACHE_MAX);
+  if (entries.length !== simCache.size) { simCache = new Map(entries); indexKept = null; }
   cacheDirty = false;
   void cacheDb().then(db => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ entries: Object.fromEntries(entries) }, 'sim'); tx.oncomplete = () => db.close(); tx.onerror = () => db.close(); }).catch(() => {});
 };
@@ -127,8 +128,10 @@ export const remember = (owner, key, answer) => {
   const xp = {};
   for (const [skill, v] of Object.entries(answer.xp || {})) if (typeof v === 'number') xp[skill] = Math.round(v * 10) / 10;
   const kept = { passed: answer.passed, strained_minutes: answer.strained_minutes, fail_seconds: answer.fail_seconds, fail_progress: answer.fail_progress, xp };
-  loadCache().set(`${owner}|${key}`, { at: Date.now(), answer: kept });
+  const k = `${owner}|${key}`, had = loadCache().has(k);
+  loadCache().set(k, { at: Date.now(), answer: kept });
   cacheDirty = true;
+  if (!had && indexKept && owner.split(':', 1)[0] === indexKept.char) addToIndex(indexKept.index, k, kept);
 };
 
 /** How far apart two characters' cached answers are: the levels between them, or Infinity when the
@@ -176,17 +179,25 @@ export const nearestAnswer = (index, owner, beatmapId, r, m, bucket, playsKey, r
   return (below || above).answer;
 };
 /** The stored answers of character `charId`, by map, rate and mods, for nearestAnswer. */
+// built once per character and kept (answers remembered later are added to it), not again for every forecast
+let indexKept = null;
+const addToIndex = (index, k, answer) => {
+  const parts = k.split('|');
+  if (parts.length < 6) return;
+  const group = `${parts[1]}|${parts[2]}|${parts[3]}`;
+  if (!index.has(group)) index.set(group, []);
+  index.get(group).push({ own: parts[0], bucket: num(parts[4]), plays: num(parts[5]), run: parts[6] ? num(parts[6].slice(1)) : 0, answer });
+};
 export const answerIndex = (charId) => {
+  if (indexKept && indexKept.char === String(charId)) return indexKept.index;
   const index = new Map();
   const now = Date.now();
   for (const [k, v] of loadCache()) {
     if (!(v && v.answer && v.answer.xp) || now - v.at >= CACHE_TTL_MS) continue;
-    const parts = k.split('|');
-    if (parts.length < 6 || parts[0].split(':')[0] !== String(charId)) continue;
-    const group = `${parts[1]}|${parts[2]}|${parts[3]}`;
-    if (!index.has(group)) index.set(group, []);
-    index.get(group).push({ own: parts[0], bucket: num(parts[4]), plays: num(parts[5]), run: parts[6] ? num(parts[6].slice(1)) : 0, answer: v.answer });
+    if (k.split(':', 1)[0] !== String(charId)) continue;
+    addToIndex(index, k, v.answer);
   }
+  indexKept = { char: String(charId), index };
   return index;
 };
 
@@ -246,7 +257,7 @@ export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds
   const rateSet = new Set(rates.map(r => String(r)));
   const forNine = new Map(), forSjm = new Map(), nineDist = new Map(), sjmDist = new Map();
   const diff = (lv, i) => Math.abs(Number(lv[i]) - Number(mine[i]));
-  for (const key of index) {
+  for (const key of [...mapIds].flatMap(id => (index.byMap && index.byMap.get(Number(id))) || [])) {
     const parts = key.split('|');
     if (parts.length < 5 || parts[2] !== String(generation >= 2 ? 1 : 0)) continue;
     const [id, rate, mk] = parts[3].split('@');
@@ -390,7 +401,13 @@ const loadOfficial = async () => {
     const db = await new Promise((ok, no) => { const q = indexedDB.open('oss-idle-sim'); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); q.onupgradeneeded = () => { q.transaction.abort(); no(new Error('no store')); }; });
     if (!db.objectStoreNames.contains('plays')) { db.close(); return officialIndex; }
     const keys = await new Promise((ok, no) => { const q = db.transaction('plays', 'readonly').objectStore('plays').getAllKeys(); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); });
-    for (const k of keys) officialIndex.add(String(k));
+    officialIndex.byMap = new Map();
+    for (const k of keys) {
+      const ks = String(k), id = Number((ks.split('|')[3] || '').split('@')[0]);
+      officialIndex.add(ks);
+      if (!officialIndex.byMap.has(id)) officialIndex.byMap.set(id, []);
+      officialIndex.byMap.get(id).push(ks);
+    }
     officialIndex.db = db;
     officialStats.keys = officialIndex.size;
     officialStats.versions = [...new Set(keys.map(k => String(k).split('|')[0]))];
@@ -621,7 +638,7 @@ export async function forecast(queue, ctx, onProgress, token) {
   /** The run this simulator works for: a scan, or later a new Memory plays count. Its calls stop with it. */
   let runToken = token;
   const asks = new Map();
-  let calls = 0, nextCall = 0, fromCache = 0;
+  let calls = 0, fromCache = 0;
   /** How far the scan is: plays forecast so far, new simulator calls, stored answers reused. */
   const progress = () => ({ plays: plays.length, calls, fromCache });
   // a quick update (after a queue change): a play the cache has no answer for borrows the nearest stored one,
@@ -692,7 +709,6 @@ export async function forecast(queue, ctx, onProgress, token) {
             logProblem('simulate', `map ${beatmapId}: ${e && e.message ? e.message : e} (retrying)`);
             // busy: this call waits, and every call after it waits too, so the server gets a break
             const pause = RETRY_WAITS_MS[attempt];
-            nextCall = Math.max(nextCall, Date.now() + pause + CALL_SPACING_MS);
             pauseCalls(pause);
             if (ctx.onRetry) ctx.onRetry(attempt + 1, RETRY_WAITS_MS.length, pause);
             const until = Date.now() + pause;
