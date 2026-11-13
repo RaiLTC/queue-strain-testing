@@ -2,7 +2,7 @@
 
 import { SETTINGS } from './config.js';
 import { MINDBLOCK, RECENT_LIMIT, SKILLS, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
-import { LEAD_IN_MS, STRAIN_CAP, afterPlay, barKnots, barOf, gainLevels, restedFatigue, warmupTrend, xpForLevel } from './rules/fatigue.js';
+import { LEAD_IN_MS, PHYSICAL, STRAIN_CAP, afterPlay, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, lerp, restedFatigue, warmup, warmupTrend, xpForLevel } from './rules/fatigue.js';
 import { DAY_MS, geneticsXpOf, recall } from './rules/genes.js';
 import { scanToken } from './ui/window.js';
 
@@ -125,6 +125,83 @@ export const answerIndex = (charId) => {
     index.get(group).push({ own: parts[0], bucket: num(parts[4]), plays: num(parts[5]), run: parts[6] ? num(parts[6].slice(1)) : 0, answer: v.answer });
   }
   return index;
+};
+
+
+// ---------------------------------------------------------------------
+// The official sim add-on's stored plays (IndexedDB 'oss-idle-sim', store 'plays'): players run it a lot, so it
+// often has already simulated the very play a forecast needs. Its key (github.com/oss-idle/addon-sim, samples.ts
+// and sweep.ts): sim version | the 11 skills' play levels, rounded | DIVINE 0/1 | map@rate@mods | map plays.
+// Its XP is the simulator's with the mods and (physical skills) fatigue divided out, so both go back in here.
+// ---------------------------------------------------------------------
+const GAME_SKILLS = ['accuracy', 'speed', 'stamina', 'jackspeed', 'coordination', 'release', 'reading', 'consistency', 'concentration', 'speedjam', 'memory'];
+const MOD_ORDER = ['EZ', 'NF', 'HR', 'SD', 'PF'];
+const OFFICIAL_KEEP_MS = 7 * 24 * 3600 * 1000;
+const xpGivesLevel = (xp) => { let level = 0; while (level < 400 && xp >= xpForLevel(level)) { xp -= xpForLevel(level); level++; } return { level, xp }; };
+const levelProgress = (level, xp) => { const n = xpForLevel(level); return n > 0 ? Math.min(1, Math.max(0, xp / n)) : 0; };
+/** A skill's play level, as the game reckons it (shared xp.ts): the better of its level and the level its lifetime XP buys, plus prestige. */
+const playLevelOf = (level, xp, lifetimeXp, prestige = 0) => { const lt = xpGivesLevel(lifetimeXp); return Math.max(level + levelProgress(level, xp), lt.level + levelProgress(lt.level, lt.xp)) + prestige; };
+/** How much of a physical skill's level is there to play with, tired and warmed up as it is (shared fatigue.ts). */
+const keptShare = (level, fatigue, warm = 1) => lerp(1, 0.25, fatigue) * lerp(lerp(1, 0.5, Math.min(1, level / 100)), 1, warm);
+const xpToLevel = (level) => { let t = 0; for (let i = 0; i < level; i++) t += xpForLevel(i); return t; };
+const officialLevels = (skills, minutes) => {
+  const fatigue = fatigueLevel(minutes), warm = warmup(minutes, num(skills.stamina && skills.stamina.upgrades));
+  return GAME_SKILLS.map((name) => {
+    const s = skills[name] || {};
+    const rested = playLevelOf(num(s.level), num(s.xp), num(s.lifetime_xp), num(s.prestige));
+    const kept = PHYSICAL.includes(name) ? keptShare(rested, fatigue, warm) : 1;
+    let lv = rested;
+    if (kept < 1) { const tired = xpGivesLevel((xpToLevel(num(s.level)) + num(s.xp)) * kept); lv = playLevelOf(tired.level, tired.xp, num(s.lifetime_xp) * kept, num(s.prestige)); }
+    return lv < 100 ? Math.round(lv) : Math.round(lv * 2) / 2;
+  }).join(',');
+};
+let officialIndex = null;
+const officialValues = new Map();
+export const officialStats = { keys: 0, versions: [], hits: 0, misses: 0, error: '' };
+/** Reads the official sim's keys once (the values when asked for), keeping only the recent ones' versions. */
+const loadOfficial = async () => {
+  if (officialIndex) return officialIndex;
+  officialIndex = new Set();
+  try {
+    if (typeof indexedDB === 'undefined') return officialIndex;
+    const dbs = indexedDB.databases ? await indexedDB.databases() : [{ name: 'oss-idle-sim' }];
+    if (!dbs.some(d => d.name === 'oss-idle-sim')) return officialIndex;
+    const db = await new Promise((ok, no) => { const q = indexedDB.open('oss-idle-sim'); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); q.onupgradeneeded = () => { q.transaction.abort(); no(new Error('no store')); }; });
+    if (!db.objectStoreNames.contains('plays')) { db.close(); return officialIndex; }
+    const keys = await new Promise((ok, no) => { const q = db.transaction('plays', 'readonly').objectStore('plays').getAllKeys(); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); });
+    for (const k of keys) officialIndex.add(String(k));
+    officialIndex.db = db;
+    officialStats.keys = officialIndex.size;
+    officialStats.versions = [...new Set(keys.map(k => String(k).split('|')[0]))];
+  } catch (e) { officialStats.error = String(e && e.message ? e.message : e); }
+  return officialIndex;
+};
+/** The official sim's answer for this exact play, as the simulator would give it, or null. Run `run` of its samples. */
+const officialAnswer = async (skills, generation, beatmapId, rate, mods, minutes, plays, run) => {
+  const index = await loadOfficial();
+  if (!index.size || !index.db) return null;
+  const levels = officialLevels(skills, minutes);
+  const modsKey = MOD_ORDER.filter(m => (mods || []).includes(m)).join(',');
+  for (const version of officialStats.versions) {
+    const key = `${version}|${levels}|${generation >= 2 ? 1 : 0}|${beatmapId}@${rate}@${modsKey}|${plays}`;
+    if (!index.has(key)) continue;
+    let rec = officialValues.get(key);
+    if (rec === undefined) {
+      rec = await new Promise((ok) => { const q = index.db.transaction('plays', 'readonly').objectStore('plays').get(key); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); });
+      officialValues.set(key, rec);
+    }
+    if (!rec || !(num(rec.at) >= Date.now() - OFFICIAL_KEEP_MS) || !Array.isArray(rec.samples) || !rec.samples.length) continue;
+    const sample = rec.samples[run % rec.samples.length];
+    if (!sample || sample.passed === false) continue;
+    const tired = fatigueXp(fatigueLevel(minutes));
+    const ez = (mods || []).includes('EZ') ? 0.5 : 1, nf = (mods || []).includes('NF');
+    if (nf) return null;
+    const xp = Object.fromEntries(Object.entries(sample.xp || {}).map(([sk, v]) => [sk, num(v) * ez * (sk === 'accuracy' && (mods || []).includes('HR') ? 1.1 : 1) * (PHYSICAL.includes(sk) ? tired : 1)]));
+    officialStats.hits++;
+    return { xp, passed: true, strained_minutes: num(sample.strained), official: true };
+  }
+  officialStats.misses++;
+  return null;
 };
 
 /** Maps that give any Speed Jam or Memory XP: their next `count` plays, one at a time, at the strain
@@ -346,11 +423,14 @@ export async function forecast(queue, ctx, onProgress, token) {
   const simStats = { ms: 0, slowest: 0, busy: 0, failed: 0 };
   /** Where a forecast's time goes (for the Suggestions' timing line): exact cache hits, building the index of
    *  stored answers, nearest-answer lookups, new simulator calls. */
-  const timing = { exact: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0 };
+  const timing = { exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0 };
   const askRun = async (asOwner, asSkills, beatmapId, r, m, bucket, playsKey, run) => {
     const key = `${beatmapId}|${r}|${[...m].sort().join('')}|${bucket}|${playsKey}${run ? `|#${run}` : ''}`;
     const kept = cached(asOwner, key);
     if (kept) { fromCache++; timing.exact++; return { answer: kept, fresh: false }; }
+    // the official sim add-on may have simulated this very play already
+    const off = await officialAnswer(asSkills, num(row.generation) || 1, beatmapId, r, m, bucket, playsKey, run || 0);
+    if (off) { fromCache++; timing.official++; remember(asOwner, key, off); return { answer: off, fresh: false }; }
     if (approxOn) {
       if (!approxIndex) { const t0 = performance.now(); approxIndex = answerIndex(num(row.id)); timing.indexMs += performance.now() - t0; timing.indexBuilds++; }
       const t1 = performance.now();

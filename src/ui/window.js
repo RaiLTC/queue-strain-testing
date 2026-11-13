@@ -1,7 +1,7 @@
 // The window: mount, the options, scanning, and every tab.
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
-import { cached, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
+import { cached, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, historyMaps, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -1430,7 +1430,7 @@ export const mount = (meta, host) => {
           ${sg && sg.running ? `<button type="button" class="qs-plain qs-suggest-stop">Stop</button><span class="qs-dim">${esc(sg.note)}…</span>` : `<button type="button" class="qs-plain qs-suggest-run">${sg ? 'Check again' : 'Find suggestions'}</button>`}
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
-        ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past the XP cut. The suggestions below keep you under it.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
         ${sgBest}
@@ -1448,6 +1448,7 @@ export const mount = (meta, host) => {
       const match = calibEst > 0 ? calibReal / calibEst : undefined;
       const fromEdit = queue.from && queue.from !== '.dock__source';
       const health = [
+        ['Official sim', officialStats.error ? 'warn' : officialStats.keys ? 'ok' : 'warn', officialStats.error ? `couldn't read its plays: ${officialStats.error}` : officialStats.keys ? `${officialStats.keys.toLocaleString()} stored plays (v${officialStats.versions.join(', ')}) · ${officialStats.hits.toLocaleString()} reused, ${officialStats.misses.toLocaleString()} not found` : 'no stored plays found (the oss!idle sim add-on keeps them)'],
         ['Medals', medals.ok ? 'ok' : r.calib && Object.keys(r.calib.factors).length ? 'warn' : 'bad',
           medals.ok ? (medals.guest ? 'guest: none' : `server · ×${medals.multiplier.toFixed(3)}`) : 'server not reached: learned from plays'],
         ['Genetics', geneFrom === 'none' && !ctx.row.local ? 'warn' : 'ok', geneFrom === 'server' ? 'server' : geneFrom === 'local' ? 'this computer' : 'none found'],
@@ -1653,7 +1654,7 @@ export const mount = (meta, host) => {
     if (sgBtn) sgBtn.onclick = async () => {
       const tok = scanToken, speed = sgSpeed, goal = sgGoal, useHistory = sgHistory, H = Math.max(1, Math.min(48, sgHours || ctx.hours));
       const plan = { quick: { steps: 1, width: 1, keep: 1 }, balanced: { steps: 5, width: 1, keep: 1 }, thorough: { steps: 8, width: 3, keep: 3 } }[speed];
-      const s = r.suggest = { hours: H, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
+      const s = r.suggest = { hours: H, running: true, done: 0, note: 'Starting', speed, goal, singles: [], best: [], startedAt: performance.now(), timing: { total: 0, forecasts: 0, exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, simMs: 0 } };
       let drawnAt = 0;
       const draw = (force) => { if (lastResult[3] === r && activeTab === 'suggest' && (force || Date.now() - drawnAt > 400)) { drawnAt = Date.now(); renderResult(...lastResult); } };
       const alive = () => tok === scanToken && lastResult[3] === r && !s.stop;
@@ -1701,7 +1702,7 @@ export const mount = (meta, host) => {
           const res = await forecast({ ...queue, entries }, { ...ctx, hours: H, quick: !exact, reuse }, () => {}, tok);
           const T = s.timing, ft = res.timing || {};
           T.total += performance.now() - t0; T.forecasts++;
-          for (const f of ['exact', 'indexMs', 'indexBuilds', 'nearMs', 'near', 'calls', 'simMs']) T[f] += num(ft[f]);
+          for (const f of ['exact', 'official', 'indexMs', 'indexBuilds', 'nearMs', 'near', 'calls', 'simMs']) T[f] += num(ft[f]);
           seen.set(k, measure(res)); s.done++;
         }
         return seen.get(k);
@@ -1720,10 +1721,12 @@ export const mount = (meta, host) => {
           // already, from the calibration); Thorough also a step or two either side, simulated when new
           if (speed !== 'quick') {
             const cur = num(e.lockedRate ?? ctx.rate) || 1;
+            // the rates the game lets you pick: 1× ± 0.05 a Speed upgrade, within 0.5×-1.5× (shared rate.ts)
+            const speedUps = num(ctx.row.speedUpgrades), slowest = Math.max(0.5, Math.round((1 - 0.05 * speedUps) * 100) / 100), fastest = Math.min(1.5, Math.round((1 + 0.05 * speedUps) * 100) / 100);
             const tries = new Set(ratesPlayed.get(e.beatmapId) || []);
             if (speed === 'thorough') for (const d of [-0.1, -0.05, 0.05, 0.1]) tries.add(Math.round((cur + d) * 100) / 100);
             for (const to of tries) {
-              if (Math.abs(to - cur) < 0.001 || to < 0.5 || to > 2) continue;
+              if (Math.abs(to - cur) < 0.001 || to < slowest - 1e-9 || to > fastest + 1e-9) continue;
               out.push({ step: { kind: 'rate', a: e.title, from: cur, to }, entries: es.map((x, j) => (j === i ? { ...x, lockedRate: to, lockedMods: x.lockedRate === undefined ? ctx.mods : x.lockedMods } : x)) });
             }
           }
