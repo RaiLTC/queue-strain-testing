@@ -56,6 +56,10 @@ export const CSS = `
 #qs-window .qs-lv-uplbl.above { top:-12px; }
 /* the upgrades after the next one, faint: arrows over or under the bar, or their own lines with the numbers to each side */
 #qs-window .qs-sg-end { flex:none; min-width:200px; text-align:center; padding:6px 10px; }
+#qs-window .qs-sg-role { font-size:10px; border-radius:6px; padding:0 5px; margin-left:4px; font-weight:600; }
+#qs-window .qs-sg-role.warms { color:#fb923c; border:1px solid rgba(251,146,60,.5); }
+#qs-window .qs-sg-role.holds { color:#4ade80; border:1px solid rgba(74,222,128,.5); }
+#qs-window .qs-sg-role.cools { color:#60a5fa; border:1px solid rgba(96,165,250,.5); }
 #qs-window .qs-sg-swap { color:#93c5fd; font-weight:700; display:inline-block; width:14px; }
 #qs-window .qs-sg-swap-2 { display:inline-block; width:18px; }
 #qs-window .qs-sg-rates { margin-top:4px; font-size:11px; line-height:15px; font-variant-numeric:tabular-nums; }

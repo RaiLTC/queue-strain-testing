@@ -80,7 +80,7 @@ const PHYSICAL_GOALS = new Set(['speed', 'stamina', 'jackspeed', 'coordination',
 /** Maps from the whole library worth simulating for `goal`: every 4K map in the game's catalog (the server's, so
  *  current), without the ones in the queue, the ones harder than you've passed
  *  lately, and the ones that can't give the goal skill anything at all; ranked for the goal, the best `limit`. */
-export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12 } = {}) {
+export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12, known = new Map() } = {}) {
   const names = await mapNames();
   const skip = new Set(skipIds.map(Number));
   // the hardest map you've passed in the last 30 days, at about the rate you'd play these
@@ -90,6 +90,13 @@ export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods =
     for (const x of rows) hardest = Math.max(hardest, num(catalogStars[num(x.beatmapId)]) * (num(x.rate) || 1));
   } catch (_) {}
   const cap = hardest > 0 ? hardest * 1.05 : Infinity;
+  // your real fails lately, per map: a map you often fail is worth less than its XP says
+  const failsOf = new Map(), playsOf = new Map();
+  try {
+    for (const x of (await gameRows('SELECT beatmapId, share FROM memory_fail WHERE characterId = ? AND playedAt >= ?', [row.id, Date.now() - 30 * DAY_MS])) || []) failsOf.set(num(x.beatmapId), (failsOf.get(num(x.beatmapId)) || 0) + 1);
+    for (const x of (await gameRows('SELECT beatmapId FROM score WHERE characterId = ? AND playedAt >= ?', [row.id, Date.now() - 30 * DAY_MS])) || []) playsOf.set(num(x.beatmapId), (playsOf.get(num(x.beatmapId)) || 0) + 1);
+  } catch (_) {}
+  const goalXp = (xp) => (goal === 'all' ? Object.values(xp).reduce((t, v) => t + num(v), 0) : num(xp[goal]));
   const ids = Object.keys(catalogInfo).map(Number).filter(id => catalogInfo[id].mode === 3 && catalogInfo[id].keys === 4);
   const scored = [];
   for (const id of ids) {
@@ -101,17 +108,28 @@ export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods =
     // a skill that can't win a single note on this chart: release needs long notes
     if (goal === 'release' && !(lnShare > 0)) continue;
     const minutes = catalogLen[id] / rate / 60;
+    // notes a second at this rate: the main pressure on speed and stamina
+    const nps = info.objects ? info.objects / Math.max(1, catalogLen[id] / rate) : 0;
     // how promising, for the goal: physical skills want hard charts, accuracy long ones, release LN-heavy ones
     const nearTop = cap < Infinity ? stars / cap : stars / 10;
-    const score = goal === 'accuracy' ? minutes * (0.5 + nearTop)
+    const guess = goal === 'accuracy' ? minutes * (0.5 + nearTop) / Math.sqrt(1 + nps / 10)
       : goal === 'release' ? lnShare * nearTop * Math.sqrt(minutes)
-      : PHYSICAL_GOALS.has(goal) ? nearTop * nearTop * Math.sqrt(minutes)
+      : PHYSICAL_GOALS.has(goal) ? nearTop * nearTop * Math.sqrt(minutes) * (1 + nps / 20)
       : nearTop * Math.sqrt(minutes);
-    scored.push({ id, score, stars });
+    // what the simulator already said about it at your levels, when it has: real XP a minute and fails
+    const k = known.get(`${id}@${rate}`);
+    const real = k && k.n ? goalXp(k.xp) / k.n / Math.max(0.1, minutes) : undefined;
+    const realFails = (failsOf.get(id) || 0) / Math.max(1, (failsOf.get(id) || 0) + (playsOf.get(id) || 0));
+    const failShare = Math.max(k && k.n ? k.fails / k.n : 0, realFails);
+    scored.push({ id, guess, real, failShare, stars });
   }
+  // the guesses put on the real answers' scale: the typical real XP a minute per unit of guess, from the maps that have both
+  const ratios = scored.filter(m => m.real > 0 && m.guess > 0).map(m => m.real / m.guess).sort((a, b) => a - b);
+  const toReal = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
+  for (const m of scored) m.score = (m.real ?? m.guess * toReal) * (1 - m.failShare);
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map(m => ({
     beatmapId: m.id, title: names[m.id], lockedRate: rate, lockedMods: mods, repeat: 1, played: 0, lengthSec: catalogLen[m.id],
-    history: { perMin: 0, plays: 0, stars: m.stars / rate, library: true },
+    history: { perMin: m.real || 0, plays: 0, stars: m.stars / rate, library: true, fails: m.failShare, known: m.real !== undefined },
   }));
 }
 /** Maps from the player's own recent history (the last `days`) that aren't in the queue, as queue entries ready

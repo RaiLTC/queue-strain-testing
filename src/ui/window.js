@@ -1,7 +1,7 @@
 // The window: mount, the options, scanning, and every tab.
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
-import { cached, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
+import { cached, knownMaps, ownerOf, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -1395,7 +1395,8 @@ export const mount = (meta, host) => {
     const sgXpName = (q) => `${q.goal === 'all' ? 'XP' : `${SKILL_NAMES[q.goal]} XP`} in ${q.hours}h`;
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
     const sgShort = (t) => esc(t);
-    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.library ? `, ${st.stars.toFixed(1)}★, from your library)` : `${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)`}</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `<span class="qs-sg-swap" title="Swap these two maps' places in the queue">⇅</span> <b>${sgShort(st.a)}</b><br><span class="qs-sg-swap-2"></span><b>${sgShort(st.b)}</b>`);
+    const sgRole = (id) => { const ro = sg && sg.roles && sg.roles[id]; return ro ? ` <span class="qs-sg-role ${ro}" title="${ro === 'warms' ? 'Pushes your strain up' : ro === 'cools' ? 'Lets your strain come down' : 'Keeps your strain about where it is'}">${ro}</span>` : ''; };
+    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.library ? `, ${st.stars.toFixed(1)}★, from the catalog${st.perMin ? `, ~${fmt(st.perMin)} XP/min simulated` : ''}${st.fails > 0.05 ? `, fails ${Math.round(st.fails * 100)}%` : ''})` : `${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)`}</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>${sgRole(st.id)}` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b>${sgRole(st.id)} ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `<span class="qs-sg-swap" title="Swap these two maps' places in the queue">⇅</span> <b>${sgShort(st.a)}</b>${sgRole(st.id)}<br><span class="qs-sg-swap-2"></span><b>${sgShort(st.b)}</b>${sgRole(st.idb)}`);
     /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
     const sgEnds = (end) => {
       if (!end || !sg) return '';
@@ -1718,15 +1719,18 @@ export const mount = (meta, host) => {
         : bm.block - m.block >= 0.02 ? `More mindblock (×${bm.block.toFixed(2)} → ×${m.block.toFixed(2)})`
         : 'Changes which maps fill your time');
       const seen = new Map();
+      let lastBaseRes = null;
       const evalQ = async (entries, exact) => {
         const k = `${exact ? 'E' : 'Q'}${keyOf(entries)}`;
         if (!seen.has(k)) {
           const t0 = performance.now();
+          const isBase = keyOf(entries) === keyOf(queue.entries);
           const reuse = { memoryLocal: r.memoryLocal, memory: r.memory, triesFrom: r.triesFrom, calib: r.calib, medals: r.medals, recent: r.recentPlays };
           const res = await forecast({ ...queue, entries }, { ...ctx, hours: H, quick: !exact, reuse }, () => {}, tok);
           const T = s.timing, ft = res.timing || {};
           T.total += performance.now() - t0; T.forecasts++;
           for (const f of ['exact', 'official', 'indexMs', 'indexBuilds', 'nearMs', 'near', 'calls', 'simMs']) T[f] += num(ft[f]);
+          if (isBase) lastBaseRes = res;
           seen.set(k, measure(res)); s.done++;
         }
         return seen.get(k);
@@ -1736,8 +1740,8 @@ export const mount = (meta, host) => {
       const movesOf = (es) => {
         const out = [];
         es.forEach((e, i) => {
-          if (es.length > 1) out.push({ step: { kind: 'remove', a: e.title }, entries: es.filter((_, j) => j !== i) });
-          const rep = (to) => out.push({ step: { kind: 'rep', a: e.title, from: e.repeat, to }, entries: es.map((x, j) => (j === i ? { ...x, repeat: to } : x)) });
+          if (es.length > 1) out.push({ step: { kind: 'remove', a: e.title, id: e.beatmapId }, entries: es.filter((_, j) => j !== i) });
+          const rep = (to) => out.push({ step: { kind: 'rep', a: e.title, id: e.beatmapId, from: e.repeat, to }, entries: es.map((x, j) => (j === i ? { ...x, repeat: to } : x)) });
           rep(e.repeat + 1);
           if (speed === 'thorough') rep(e.repeat + 2);
           if (speed !== 'quick' && e.repeat > 1) rep(e.repeat - 1);
@@ -1748,10 +1752,10 @@ export const mount = (meta, host) => {
             // the rates the game lets you pick: 1× ± 0.05 a Speed upgrade, within 0.5×-1.5× (shared rate.ts)
             const speedUps = num(ctx.row.speedUpgrades), slowest = Math.max(0.5, Math.round((1 - 0.05 * speedUps) * 100) / 100), fastest = Math.min(1.5, Math.round((1 + 0.05 * speedUps) * 100) / 100);
             const tries = new Set(ratesPlayed.get(e.beatmapId) || []);
-            if (speed === 'thorough') for (const d of [-0.1, -0.05, 0.05, 0.1]) tries.add(Math.round((cur + d) * 100) / 100);
+            if (speed === 'thorough') for (const d of [-0.2, -0.15, -0.1, -0.05, 0.05, 0.1, 0.15, 0.2]) tries.add(Math.round((cur + d) * 100) / 100);
             for (const to of tries) {
               if (Math.abs(to - cur) < 0.001 || to < Math.max(slowest, rMin) - 1e-9 || to > Math.min(fastest, rMax) + 1e-9) continue;
-              out.push({ step: { kind: 'rate', a: e.title, from: cur, to }, entries: es.map((x, j) => (j === i ? { ...x, lockedRate: to, lockedMods: x.lockedRate === undefined ? ctx.mods : x.lockedMods } : x)) });
+              out.push({ step: { kind: 'rate', a: e.title, id: e.beatmapId, from: cur, to }, entries: es.map((x, j) => (j === i ? { ...x, lockedRate: to, lockedMods: x.lockedRate === undefined ? ctx.mods : x.lockedMods } : x)) });
             }
           }
         });
@@ -1759,11 +1763,11 @@ export const mount = (meta, host) => {
           for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) {
             if (speed !== 'thorough' && j !== i + 1) continue;
             const sw = [...es]; sw[i] = es[j]; sw[j] = es[i];
-            out.push({ step: { kind: 'swap', a: es[i].title, b: es[j].title }, entries: sw });
+            out.push({ step: { kind: 'swap', a: es[i].title, b: es[j].title, id: es[i].beatmapId, idb: es[j].beatmapId }, entries: sw });
           }
         }
         // a map from your history, added at the end with one play
-        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId) && h.lockedRate >= rMin - 1e-9 && h.lockedRate <= rMax + 1e-9) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin, easy: !!h.history.easy, library: !!h.history.library, stars: h.history.stars }, entries: [...es, h] });
+        for (const h of extra) if (!es.some(e => e.beatmapId === h.beatmapId) && h.lockedRate >= rMin - 1e-9 && h.lockedRate <= rMax + 1e-9) out.push({ step: { kind: 'add', a: h.title, rate: h.lockedRate, perMin: h.history.perMin, easy: !!h.history.easy, library: !!h.history.library, stars: h.history.stars, fails: h.history.fails || 0 }, entries: [...es, h] });
         return out;
       };
       let extra = [];
@@ -1780,11 +1784,16 @@ export const mount = (meta, host) => {
         if (useLibrary) {
           s.note = 'Picking maps from your library'; draw(true);
           const speedUps = num(ctx.row.speedUpgrades), libRate = Math.min(Math.max(num(ctx.rate) || 1, rMin, Math.max(0.5, 1 - 0.05 * speedUps)), rMax, Math.min(1.5, 1 + 0.05 * speedUps));
-          const lib = await libraryMaps(ctx.row, [...queue.entries, ...extra].map(e => e.beatmapId), { goal, rate: Math.round(libRate * 100) / 100, mods: ctx.mods, limit: { quick: 6, balanced: 12, thorough: 25 }[speed] });
+          const lib = await libraryMaps(ctx.row, [...queue.entries, ...extra].map(e => e.beatmapId), { goal, rate: Math.round(libRate * 100) / 100, mods: ctx.mods, limit: { quick: 6, balanced: 12, thorough: 25 }[speed], known: knownMaps(ownerOf(ctx.row)) });
           extra = [...extra, ...lib];
         }
         const baseKey = keyOf(queue.entries);
         const base = await evalQ(queue.entries, fresh);
+        // each queue map's role, from how it moves your strain in the forecast: warms you up, holds, or cools you down
+        s.roles = {};
+        { const res0 = lastBaseRes; const by = {};
+          for (const p of (res0 ? res0.plays : [])) { const id = queue.entries[p.entry] && queue.entries[p.entry].beatmapId; if (!id) continue; (by[id] = by[id] || []).push(num(p.trend)); }
+          for (const [id, t] of Object.entries(by)) { const avg = t.reduce((a, b) => a + b, 0) / t.length; s.roles[id] = avg > 0.3 ? 'warms' : avg < -0.3 ? 'cools' : 'holds'; } }
         s.base = base.score;
         s.baseEnd = base.end;
         s.baseTotal = base.total;
@@ -1793,18 +1802,24 @@ export const mount = (meta, host) => {
         let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
         const all = [];
         for (let step = 1; step <= plan.steps && alive(); step++) {
+          // library maps come best-first: after 4 in a row that don't beat your queue, the rest are skipped (early stop)
+          let libMiss = 0;
           const cands = [];
           for (const f of frontier) for (const mv of movesOf(f.entries)) {
             if (!alive()) break;
             const key = keyOf(mv.entries);
             if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
+            if (mv.step.kind === 'add' && mv.step.library && libMiss >= 4) continue;
             const ev = await evalQ(mv.entries, fresh);
+            if (mv.step.kind === 'add' && mv.step.library) libMiss = ev.score > f.score * 1.002 ? 0 : libMiss + 1;
             cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, crossed: ev.crossed, parent: f.score, m: ev.m, end: ev.end });
             s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
             if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, total: c.total, crossed: c.crossed, why: whyOf(c.m, base.m, c.crossed, base.crossed), end: c.end }));
             draw();
           }
           all.push(...cands);
+          // library maps that didn't help on their own aren't tried again in later steps
+          if (step === 1) { const kept = new Set(cands.filter(c => c.steps[0].kind === 'add' && c.score > base.score * 1.002).map(c => c.entries[c.entries.length - 1].beatmapId)); extra = extra.filter(h => !h.history.library || kept.has(h.beatmapId)); }
           s.best = all.filter(c => !c.crossed && (base.crossed || c.score > base.score * 1.002)).sort((a, b) => b.score - a.score).slice(0, plan.keep).map(c => ({ steps: c.steps, score: c.score, total: c.total, entries: c.entries, end: c.end }));
           // only what beats the queue it came from goes on to the next step
           frontier = cands.filter(c => c.score > c.parent * 1.002).sort((a, b) => b.score - a.score).slice(0, plan.width);

@@ -52,6 +52,23 @@ export const saveCache = () => {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ entries: Object.fromEntries(entries) })); } catch (_) {}
   cacheDirty = false;
 };
+/** What the simulator has already answered about each map at `owner`'s levels (our stored answers): plays, fails
+ *  and XP per skill, by map@rate. Free real data for ranking maps without new calls. */
+export const knownMaps = (owner) => {
+  const out = new Map();
+  for (const [k, v] of loadCache()) {
+    if (!v || !v.answer || Date.now() - v.at >= CACHE_TTL_MS) continue;
+    const parts = k.split('|');
+    if (parts[0] !== owner) continue;
+    const id = num(parts[1]), rate = num(parts[2]);
+    const key = `${id}@${rate}`, m = out.get(key) || { id, rate, n: 0, fails: 0, xp: {} };
+    m.n++;
+    if (v.answer.passed === false) m.fails++;
+    for (const [sk, x] of Object.entries(v.answer.xp || {})) m.xp[sk] = (m.xp[sk] || 0) + num(x);
+    out.set(key, m);
+  }
+  return out;
+};
 /** What the answers depend on in the character: the cache key's first part. */
 export const ownerOf = (row) => [num(row.id), num(row.generation) || 1,
   ...SKILLS.map(s => `${Math.floor(num(row[s]))}.${num(row[`${s}Prestige`])}.${num(row[`${s}Upgrades`])}`)].join(':');
