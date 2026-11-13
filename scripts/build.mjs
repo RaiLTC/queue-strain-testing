@@ -50,7 +50,9 @@ for (const file of FILES) {
 // the version players see (config.js) has to be the one being released (package.json)
 const config_js = await readFile(resolve(root, 'src/config.js'), 'utf8');
 const shown = (config_js.match(/^export const VERSION = '([^']+)';/m) || [])[1];
-if (shown !== pkg.version) {
+// hotfixes of a #.#.0 release are named #.#.0# (1.4.01) but npm can't hold a leading zero (1.4.1): the same version
+const same = (a, b) => String(a).split('.').map(Number).join('.') === String(b).split('.').map(Number).join('.');
+if (!same(shown, pkg.version)) {
   throw new Error(`src/config.js says VERSION '${shown}', package.json says '${pkg.version}': make them the same`);
 }
 
