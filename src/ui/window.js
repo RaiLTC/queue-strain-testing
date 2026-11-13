@@ -1395,7 +1395,7 @@ export const mount = (meta, host) => {
     const sgXpName = (q) => `${q.goal === 'all' ? 'XP' : `${SKILL_NAMES[q.goal]} XP`} in ${q.hours}h`;
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
     const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
-    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×, you got ~${fmt(st.perMin)} XP/min on it)</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
     /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
     const sgEnds = (end) => {
       if (!end || !sg) return '';
@@ -1661,7 +1661,8 @@ export const mount = (meta, host) => {
       /** A forecast's worth for the goal, and what explains it: the share of the time in the sweet spot and past
        *  the XP cut, and the average mindblock. */
       /** A queue's worth: its XP over the look-ahead, ranked down for time outside Peak (Pushing a little, past
-       *  the XP cut a lot, below Peak once warmed up some), for ending outside Peak, and for heavy mindblock late on. */
+       *  the XP cut a lot, below Peak once warmed up some), for ending outside Peak, and a little for heavy mindblock late
+       *  on (the XP itself already has mindblock taken off, so a repeat pays for it there). */
       const measure = (res) => {
         let xp = 0, min = 0, peak = 0, cut = 0, block = 0, off = 0, offMin = 0, lateBlock = 0, lateN = 0, warm = false;
         for (const p of res.plays) {
@@ -1679,7 +1680,7 @@ export const mount = (meta, host) => {
         const last = res.samples[res.samples.length - 1] || {};
         const endBar = num(last.bar), endF = endBar >= XP_CUT ? 0.6 : endBar >= BAR_ZONES[1] ? 0.9 : endBar < BAR_ZONES[0] ? 0.85 : 1;
         const blockEnd = lateN ? lateBlock / lateN : 1;
-        const rank = (xp / H) * (1 - 0.5 * (offMin ? off / offMin : 0)) * endF * (0.6 + 0.4 * blockEnd);
+        const rank = (xp / H) * (1 - 0.5 * (offMin ? off / offMin : 0)) * endF * (0.9 + 0.1 * blockEnd);
         return { total: xp, score: rank, m: { peak: min ? peak / min : 0, cut: min ? cut / min : 0, block: min ? block / min : 1 }, end: { bar: num(last.bar), minutes: num(last.minutes) } };
       };
       const pc = (v) => `${Math.round(v * 100)}%`;
@@ -1714,6 +1715,17 @@ export const mount = (meta, host) => {
           rep(e.repeat + 1);
           if (speed === 'thorough') rep(e.repeat + 2);
           if (speed !== 'quick' && e.repeat > 1) rep(e.repeat - 1);
+          // another rate: the ones you really played this map at lately (their simulator answers are usually stored
+          // already, from the calibration); Thorough also a step or two either side, simulated when new
+          if (speed !== 'quick') {
+            const cur = num(e.lockedRate ?? ctx.rate) || 1;
+            const tries = new Set(ratesPlayed.get(e.beatmapId) || []);
+            if (speed === 'thorough') for (const d of [-0.1, -0.05, 0.05, 0.1]) tries.add(Math.round((cur + d) * 100) / 100);
+            for (const to of tries) {
+              if (Math.abs(to - cur) < 0.001 || to < 0.5 || to > 2) continue;
+              out.push({ step: { kind: 'rate', a: e.title, from: cur, to }, entries: es.map((x, j) => (j === i ? { ...x, lockedRate: to, lockedMods: x.lockedRate === undefined ? ctx.mods : x.lockedMods } : x)) });
+            }
+          }
         });
         if (speed !== 'quick' && es.length > 2) {
           for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) {
@@ -1727,6 +1739,14 @@ export const mount = (meta, host) => {
         return out;
       };
       let extra = [];
+      /** The rates you played each queue map at in the last 7 days. */
+      const ratesPlayed = new Map();
+      try {
+        if (speed !== 'quick') {
+          const rows = (await gameRows('SELECT beatmapId, rate FROM score WHERE characterId = ? AND playedAt >= ?', [ctx.row.id, Date.now() - 7 * 86400000])) || [];
+          for (const x of rows) { const id = num(x.beatmapId), rt = Math.round((num(x.rate) || 1) * 100) / 100; if (!ratesPlayed.has(id)) ratesPlayed.set(id, new Set()); ratesPlayed.get(id).add(rt); }
+        }
+      } catch (_) {}
       try {
         if (useHistory) { s.note = 'Finding maps from your history'; draw(true); extra = await historyMaps(ctx.row, queue.entries.map(e => e.beatmapId)); }
         const baseKey = keyOf(queue.entries);
