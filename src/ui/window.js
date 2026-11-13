@@ -2,6 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
+import { pool } from '../forecast.js';
 import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, sharedStats, SHARED_CACHE_URL, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
@@ -1826,10 +1827,12 @@ export const mount = (meta, host) => {
         for (let step = 1; step <= 3 && alive(); step++) {
           s.note = `Step ${step} of 3 · ${s.done} queues checked`;
           let best = null;
-          for (const mv of movesOf(cur.entries)) {
-            if (!alive()) break;
-            const ev = await evalQ(mv.entries);
-            s.note = `Step ${step} of 3 · ${s.done} queues checked`;
+          // the step's changes, up to 8 forecast at once (independent of each other), then looked at in order
+          const moves = movesOf(cur.entries);
+          const evs = await pool(moves.map(mv => async () => { if (!alive()) return null; const ev = await evalQ(mv.entries); s.note = `Step ${step} of 3 · ${s.done} queues checked`; draw(); return ev; }), 8);
+          for (let mi = 0; mi < moves.length; mi++) {
+            const mv = moves[mi], ev = evs[mi];
+            if (!ev || !alive()) break;
             if (step === 1) s.singles.push({ step: mv.step, score: ev.m.score, total: ev.m.total, focusTotal: ev.m.focusTotal, crossed: ev.m.crossed, end: ev.m.end });
             const better = cur.m.crossed ? ev.m.score > cur.m.score + 0.01 : !ev.m.crossed && ev.m.score > cur.m.score * 1.005;
             if (better && (!best || ev.m.score > best.m.score)) best = { entries: mv.entries, steps: [...cur.steps, mv.step], m: ev.m };

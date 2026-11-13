@@ -24,6 +24,28 @@ export const CALL_SPACING_MS = SETTINGS.callSpacingMs;
 export const MAX_PLAYS = 3000;
 
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// One limit for every simulator call the add-on makes, from anywhere (scans, Suggestions, the library, all at once):
+// at most one every CALL_SPACING_MS and 1,100 a minute, under the server's 1,200 a minute a player. A busy answer
+// (429) pauses them all for as long as the server asks.
+const callTimes = [];
+let lastCall = 0, pausedUntil = 0;
+export const pauseCalls = (ms) => { pausedUntil = Math.max(pausedUntil, Date.now() + ms); };
+export const callSlot = async () => {
+  for (;;) {
+    const now = Date.now();
+    while (callTimes.length && now - callTimes[0] > 60000) callTimes.shift();
+    const wait = Math.max(pausedUntil - now, lastCall + CALL_SPACING_MS - now, callTimes.length >= 1100 ? 60000 - (now - callTimes[0]) + 20 : 0);
+    if (wait <= 0) { callTimes.push(now); lastCall = now; return; }
+    await sleep(Math.max(5, wait));
+  }
+};
+/** Runs `tasks` (functions returning promises) at most `limit` at once; their results in order. */
+export const pool = async (tasks, limit) => {
+  const out = new Array(tasks.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, async () => { while (next < tasks.length) { const i = next++; out[i] = await tasks[i](); } }));
+  return out;
+};
 
 // The simulator's answers, kept across scans and restarts. An answer belongs to the character as it
 // was: its generation and every skill's whole level, prestige and upgrades. When any of those change
@@ -622,9 +644,7 @@ export async function forecast(queue, ctx, onProgress, token) {
     const fresh = !asks.has(askKey);
     if (fresh) {
       asks.set(askKey, (async () => {
-        const wait = Math.max(0, nextCall - Date.now());
-        nextCall = Date.now() + wait + CALL_SPACING_MS;
-        if (wait) await sleep(wait);
+        await callSlot();
         if (runToken !== scanToken) throw new Error('stopped');
         let answer;
         for (let attempt = 0; ; attempt++) {
@@ -650,6 +670,7 @@ export async function forecast(queue, ctx, onProgress, token) {
             // busy: this call waits, and every call after it waits too, so the server gets a break
             const pause = RETRY_WAITS_MS[attempt];
             nextCall = Math.max(nextCall, Date.now() + pause + CALL_SPACING_MS);
+            pauseCalls(pause);
             if (ctx.onRetry) ctx.onRetry(attempt + 1, RETRY_WAITS_MS.length, pause);
             const until = Date.now() + pause;
             while (Date.now() < until) { if (runToken !== scanToken) throw new Error('stopped'); await sleep(250); }

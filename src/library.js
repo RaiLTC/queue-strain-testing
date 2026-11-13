@@ -5,7 +5,7 @@
 // (IndexedDB) for the character's current levels.
 
 import { SKILLS, catalogEntries, gameRows, logProblem, num } from './game.js';
-import { CALL_SPACING_MS, RETRY_WAITS_MS, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sharedPlaysFor, sleep, strainStep } from './forecast.js';
+import { CALL_SPACING_MS, RETRY_WAITS_MS, callSlot, pauseCalls, pool, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sharedPlaysFor, sleep, strainStep } from './forecast.js';
 import { STRAIN_CAP } from './rules/fatigue.js';
 
 const DB = 'queue-strain', STORE = 'library';
@@ -83,11 +83,9 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
     const key = `${id}|${rate}|${[...mods].sort().join('')}|${bucket}|${p}`;
     let answer = cached(owner, key);
     for (let attempt = 0; !answer && !stopped(); attempt++) {
-      const wait = Math.max(0, nextCall - Date.now());
-      if (wait) await sleep(wait);
-      nextCall = Date.now() + CALL_SPACING_MS;
+      await callSlot();
       try { answer = await api.simulate({ beatmap_id: id, rate, mods, generation: num(row.generation) || 1, strain_minutes: bucket, map_plays: p, skills }); calls++; remember(owner, key, answer); }
-      catch (e) { if (attempt >= RETRY_WAITS_MS.length || !isTransient(e)) { logProblem('library', `map ${id}: ${e && e.message ? e.message : e}`); break; } nextCall = Date.now() + RETRY_WAITS_MS[attempt]; }
+      catch (e) { if (attempt >= RETRY_WAITS_MS.length || !isTransient(e)) { logProblem('library', `map ${id}: ${e && e.message ? e.message : e}`); break; } pauseCalls(RETRY_WAITS_MS[attempt]); }
     }
     if (!answer) return;
     c.xp = answer.passed === false ? {} : Object.fromEntries(SKILLS.map(sk => [sk, num(answer.xp && answer.xp[sk])]));
@@ -103,12 +101,13 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
     for (;;) {
       const ranked = [...cand.keys()].map(mr => ({ mr, v: perMin(mr, cand.get(mr).xp, sk) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
       const top = ranked.slice(0, LIBRARY_TOP);
-      const next = top.find(x => !cand.get(x.mr).exact && !cand.get(x.mr).confirmed);
+      const batch = top.filter(x => !cand.get(x.mr).exact && !cand.get(x.mr).confirmed).slice(0, Math.max(1, Math.min(10, CONFIRM_CAP - spent)));
+      const next = batch[0];
       if (!next || spent >= CONFIRM_CAP || stopped()) { lists[sk] = top.map(x => { const c = cand.get(x.mr), [id, rate] = x.mr.split('@').map(Number), e = byId.get(id); return { id, rate, title: e ? e.title : `Map ${id}`, stars: e ? e.stars : 0, lengthSec: e ? e.lengthSec : 0, perMin: x.v, source: c.source, sure: !!(c.exact || c.confirmed), strainedShare: c.strained !== undefined && e ? Math.max(0, Math.min(1, num(c.strained) / Math.max(0.1, e.lengthSec / rate / 60))) : undefined }; }); break; }
       onProgress({ phase: 'Confirming', skill: sk, calls });
-      await confirm(next.mr);
-      spent++;
-      if (!cand.get(next.mr).confirmed) cand.delete(next.mr);
+      await pool(batch.map(x => () => confirm(x.mr)), 10);
+      spent += batch.length;
+      for (const x of batch) if (cand.get(x.mr) && !cand.get(x.mr).confirmed) cand.delete(x.mr);
     }
   }
   const data = { at: Date.now(), lists, calls };
