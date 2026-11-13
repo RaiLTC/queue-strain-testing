@@ -56,6 +56,8 @@ export const CSS = `
 #qs-window .qs-lv-uplbl.above { top:-12px; }
 /* the upgrades after the next one, faint: arrows over or under the bar, or their own lines with the numbers to each side */
 #qs-window .qs-sg-end { flex:none; min-width:200px; text-align:center; padding:6px 10px; }
+#qs-window .qs-sg-swap { color:#93c5fd; font-weight:700; display:inline-block; width:14px; }
+#qs-window .qs-sg-swap-2 { display:inline-block; width:18px; }
 #qs-window .qs-sg-rates { margin-top:4px; font-size:11px; line-height:15px; font-variant-numeric:tabular-nums; }
 #qs-window .qs-sg-endstate { font-size:15px; font-weight:700; margin-top:2px; }
 #qs-window .qs-lv-laterbox { position:absolute; left:0; right:0; top:3px; height:9px; pointer-events:none; }

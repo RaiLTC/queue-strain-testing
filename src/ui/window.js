@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { cached, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
-import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
+import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
@@ -1394,8 +1394,8 @@ export const mount = (meta, host) => {
     const sg = r.suggest;
     const sgXpName = (q) => `${q.goal === 'all' ? 'XP' : `${SKILL_NAMES[q.goal]} XP`} in ${q.hours}h`;
     const sgGoalName = (g) => (g === 'all' ? 'XP/h' : `${SKILL_NAMES[g]} XP/h`);
-    const sgShort = (t) => esc(t.length > 46 ? `${t.slice(0, 45)}…` : t);
-    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.library ? `, ${st.stars.toFixed(1)}★, from your library)` : `${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)`}</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `Swap <b>${sgShort(st.a)}</b> and <b>${sgShort(st.b)}</b>`);
+    const sgShort = (t) => esc(t);
+    const sgText = (st) => (st.kind === 'add' ? `Add <b>${sgShort(st.a)}</b> <span class="qs-dim">(${st.rate}×${st.library ? `, ${st.stars.toFixed(1)}★, from your library)` : `${st.easy ? `, ${st.stars.toFixed(1)}★, to cool down` : ''}, you got ~${fmt(st.perMin)} XP/min on it)`}</span>` : st.kind === 'remove' ? `Remove <b>${sgShort(st.a)}</b>` : st.kind === 'rate' ? `Rate <b>${sgShort(st.a)}</b> ${st.from}× → ${st.to}×` : st.kind === 'rep' ? `Repeat <b>${sgShort(st.a)}</b> ${st.from} → ${st.to}` : `<span class="qs-sg-swap" title="Swap these two maps' places in the queue">⇅</span> <b>${sgShort(st.a)}</b><br><span class="qs-sg-swap-2"></span><b>${sgShort(st.b)}</b>`);
     /** Where a queue leaves you after the look-ahead: "Peak → Pushing", and past the XP cut the XP it costs there. */
     const sgEnds = (end) => {
       if (!end || !sg) return '';
@@ -1412,7 +1412,7 @@ export const mount = (meta, host) => {
     const sgBest = !sg || !sg.base ? '' : sg.best.length ? sg.best.map((b, i) => `<div class="qs-card" style="background:#101018; margin-top:8px;">
           <div style="display:flex; gap:8px;"><div><b>${sg.best.length > 1 ? `Option ${i + 1}` : sg.speed === 'quick' ? 'Best single change' : 'Best combination'}</b> · ${b.exact !== undefined ? `${sgPct(b.exactTotal, b.exactBaseTotal)} <span class="qs-dim">${sgXpName(sg)} · checked with the simulator</span>` : `${sgPct(b.total, sg.baseTotal)} <span class="qs-dim">${sgXpName(sg)} · ${sg.fresh ? 'simulated' : 'estimate'}</span>`}</div></div>
           <div style="display:flex; gap:16px; align-items:center;">
-            <ol style="margin:4px 0 0 18px; padding:0; flex:1; min-width:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol>
+            <div style="flex:1; min-width:0;"><ol style="margin:4px 0 0 18px; padding:0;">${b.steps.map(st => `<li>${sgText(st)}</li>`).join('')}</ol><button type="button" class="qs-plain qs-sg-write" data-i="${i}" style="margin-top:6px;" title="Write this queue into your &quot;${SUGGESTED_PLAYLIST}&quot; (created the first time, replaced each time)">${sg.written === i ? `Written to ${SUGGESTED_PLAYLIST}` : `Write to ${SUGGESTED_PLAYLIST}`}</button></div>
             <div class="qs-sg-end" title="Your strain now → after the next ${sg.hours} hours with this queue, and the XP over them: your queue as it is → with this option"><div class="qs-dim">After ${sg.hours} hours</div><div class="qs-sg-endstate">${sgEnds(b.exactEnd || b.end)}</div><div style="margin-top:3px;"><span class="qs-dim">XP</span> ${fmt(b.exactBaseTotal ?? sg.baseTotal)} <span class="qs-dim">→</span> <b>${fmt(b.exactTotal ?? b.total)}</b> <span style="color:${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '#4ade80' : '#f87171'};">(${(b.exactTotal ?? b.total) >= (b.exactBaseTotal ?? sg.baseTotal) ? '+' : '−'}${fmt(Math.abs((b.exactTotal ?? b.total) - (b.exactBaseTotal ?? sg.baseTotal)))})</span></div>${sgRates(b.exactBaseTotal ?? sg.baseTotal, b.exactTotal ?? b.total, sg.hours)}</div>
           </div>
         </div>`).join('') : sg.running ? '' : '<div class="qs-dim" style="margin-top:8px;">No change found that beats your queue as it is.</div>';
@@ -1665,6 +1665,13 @@ export const mount = (meta, host) => {
     if (sgFreshBox) sgFreshBox.onchange = () => { sgFresh = sgFreshBox.checked; sgSave(); };
     const sgHistSel = outEl.querySelector('#qs-sg-history');
     if (sgHistSel) sgHistSel.onchange = () => { sgHistory = sgHistSel.checked; sgSave(); };
+    for (const btn of outEl.querySelectorAll('.qs-sg-write')) btn.onclick = async () => {
+      const opt = r.suggest && r.suggest.best[Number(btn.dataset.i)];
+      if (!opt || !opt.entries) return;
+      btn.disabled = true; btn.textContent = 'Writing…';
+      try { await writeSuggestedPlaylist(ctx.row, opt.entries); r.suggest.written = Number(btn.dataset.i); renderResult(...lastResult); }
+      catch (e) { btn.disabled = false; btn.textContent = `Couldn't write: ${e && e.message ? e.message : e}`; }
+    };
     const sgStop = outEl.querySelector('.qs-suggest-stop');
     if (sgStop) sgStop.onclick = () => { if (r.suggest) { r.suggest.stop = true; r.suggest.note = 'Stopping'; } };
     const sgBtn = outEl.querySelector('.qs-suggest-run');
