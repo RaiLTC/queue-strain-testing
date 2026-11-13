@@ -304,6 +304,11 @@ export const officialStats = { keys: 0, versions: [], hits: 0, misses: 0, error:
 export const SHARED_CACHE_URL = 'https://cache.oss.idle.rhythmgamers.net';
 export const sharedStats = { lookups: 0, rows: 0, hits: 0, error: '' };
 const sharedRows = new Map(), sharedAsked = new Set(), lookupTimes = [];
+// what's kept in memory from the shared cache, at most (the oldest go first): enough for a few scans
+const SHARED_KEEP = 20000;
+const trimOldest = (coll, max) => { if (coll.size <= max) return; let n = coll.size - Math.floor(max * 0.75); for (const k of coll.keys()) { if (n-- <= 0) break; coll.delete(k); } };
+/** A shared cache row, only the parts the forecast reads. */
+const compactRow = (row) => ({ passed: row.passed, strained_minutes: row.strained_minutes, fail_seconds: row.fail_seconds, fail_progress: row.fail_progress, xp: Object.fromEntries(Object.entries(row.xp || {}).map(([sk, v]) => [sk, num(v)])) });
 const learnedOf = (plays) => (plays <= 0 ? false : plays >= 68 ? true : undefined);
 const ownMult = (s) => { const od = num(s && s.overdrive), odM = od <= 0 ? 1 : Math.max(1, Math.min(od, 2.5 * Math.pow(od, Math.log10(2)))); return (1 + 0.1 * num(s && s.upgrades) * odM) * Math.pow(1.1, num(s && s.prestige)); };
 const lookupSlot = async () => {
@@ -315,13 +320,14 @@ const lookupSlot = async () => {
   }
 };
 /** Asks the shared cache about `ids` at play levels `levels` (the 11 joined, as officialLevels gives them). */
-export const sharedLookup = async (generation, levels, ids, mods = []) => {
-  const want = [...new Set(ids)].filter(id => !sharedAsked.has(`${generation}|${levels}|${id}`));
+// `sink`: rows go to it (key, row) instead of being kept here: for the library, which asks about every map at once
+export const sharedLookup = async (generation, levels, ids, mods = [], sink = null) => {
+  const want = sink ? [...new Set(ids)] : [...new Set(ids)].filter(id => !sharedAsked.has(`${generation}|${levels}|${id}`));
   if (!want.length || typeof fetch === 'undefined') return;
   const lv = levels.split(',').map(Number), body = Object.fromEntries(GAME_SKILLS.map((sk, i) => [sk, lv[i]]));
   for (let i = 0; i < want.length; i += 200) {
     const chunk = want.slice(i, i + 200);
-    for (const id of chunk) sharedAsked.add(`${generation}|${levels}|${id}`);
+    if (!sink) { for (const id of chunk) sharedAsked.add(`${generation}|${levels}|${id}`); trimOldest(sharedAsked, SHARED_KEEP); }
     try {
       await lookupSlot();
       const res = await fetch(`${SHARED_CACHE_URL}/lookup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ generation, levels: body, beatmap_ids: chunk, mods }) });
@@ -332,9 +338,11 @@ export const sharedLookup = async (generation, levels, ids, mods = []) => {
       if (at.strained_minutes === undefined || at.xp === undefined) continue;
       for (const row of rows || []) {
         const mk = MOD_ORDER.filter(m => (row[at.mods] || []).includes(m)).join(',');
-        sharedRows.set(`${generation}|${levels}|${row[at.beatmap_id]}@${row[at.rate]}@${mk}@${row[at.learned] ? 1 : 0}`, Object.fromEntries(columns.map((c, k) => [c, row[k]])));
+        const key = `${generation}|${levels}|${row[at.beatmap_id]}@${row[at.rate]}@${mk}@${row[at.learned] ? 1 : 0}`, kept = compactRow(Object.fromEntries(columns.map((c, k) => [c, row[k]])));
+        if (sink) sink(key, kept); else sharedRows.set(key, kept);
         sharedStats.rows++;
       }
+      if (!sink) trimOldest(sharedRows, SHARED_KEEP);
       sharedStats.error = '';
     } catch (e) { sharedStats.error = String(e && e.message ? e.message : e); }
   }
@@ -344,13 +352,14 @@ export const sharedLookup = async (generation, levels, ids, mods = []) => {
 export const sharedPlaysFor = async (skills, generation, mods, minutes, ids, rates, playsOf) => {
   const out = new Map();
   const levels = officialLevels(skills, minutes);
-  await sharedLookup(generation, levels, ids, mods);
   const tired = fatigueXp(fatigueLevel(minutes)), mk = MOD_ORDER.filter(m => (mods || []).includes(m)).join(',');
+  const rateSet = new Set(rates.map(String)), rows = new Map();
+  await sharedLookup(generation, levels, ids, mods, (key, row) => { const [id, rate, rmk] = key.split('|').pop().split('@'); if (rateSet.has(rate) && rmk === mk) rows.set(key, row); });
   for (const id of ids) {
     const learned = learnedOf(playsOf.get(id) || 0);
     if (learned === undefined) continue;
     for (const rate of rates) {
-      const row = sharedRows.get(`${generation}|${levels}|${id}@${rate}@${mk}@${learned ? 1 : 0}`);
+      const row = rows.get(`${generation}|${levels}|${id}@${rate}@${mk}@${learned ? 1 : 0}`);
       if (!row || row.passed === false) continue;
       out.set(`${id}@${rate}`, { xp: Object.fromEntries(Object.entries(row.xp || {}).map(([sk, v]) => [sk, num(v) * ownMult(skills[sk]) * (PHYSICAL.includes(sk) ? tired : 1)])), passed: true, exact: true, strained: num(row.strained_minutes) });
     }
@@ -401,6 +410,7 @@ const officialAnswer = async (skills, generation, beatmapId, rate, mods, minutes
     if (rec === undefined) {
       rec = await new Promise((ok) => { const q = index.db.transaction('plays', 'readonly').objectStore('plays').get(key); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); });
       officialValues.set(key, rec);
+      trimOldest(officialValues, 2000);
     }
     if (!rec || !(num(rec.at) >= Date.now() - OFFICIAL_KEEP_MS) || !Array.isArray(rec.samples) || !rec.samples.length) continue;
     const sample = rec.samples[run % rec.samples.length];
