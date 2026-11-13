@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { cached, knownMaps, ownerOf, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
-import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
+import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, libraryStats, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
@@ -443,9 +443,14 @@ export const mount = (meta, host) => {
 
   // while editing the queue with its mods menu (.mod-select) up, clicks go through the window to the game, if that's
   // on; checked as the mouse moves, so it follows the menu opening and closing right away
+  // the overlay checks (fade, menus, chat) measure the page, so they run at most once a frame, not on every mouse
+  // move: dragging the time slider sends hundreds of moves a second
+  let movePending = false;
   moveListener = (e) => {
     mouseX = e.clientX; mouseY = e.clientY;
-    updateOverlays();
+    if (movePending) return;
+    movePending = true;
+    requestAnimationFrame(() => { movePending = false; updateOverlays(); });
   };
   window.addEventListener('pointermove', moveListener, true);
   // a wheel turned over the chat scrolls the chat, even where this window lies over or under it (issue #11)
@@ -1442,6 +1447,7 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
+        ${sg && sg.libNote && !sg.running ? `<div class="qs-dim" style="margin-top:6px; font-size:11px;">${esc(sg.libNote)}</div>` : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past the XP cut. The suggestions below keep you under it.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
         ${sgBest}
@@ -1786,6 +1792,7 @@ export const mount = (meta, host) => {
           const speedUps = num(ctx.row.speedUpgrades), libRate = Math.min(Math.max(num(ctx.rate) || 1, rMin, Math.max(0.5, 1 - 0.05 * speedUps)), rMax, Math.min(1.5, 1 + 0.05 * speedUps));
           const lib = await libraryMaps(ctx.row, [...queue.entries, ...extra].map(e => e.beatmapId), { goal, rate: Math.round(libRate * 100) / 100, mods: ctx.mods, limit: { quick: 6, balanced: 12, thorough: 25 }[speed], known: knownMaps(ownerOf(ctx.row)) });
           extra = [...extra, ...lib];
+          s.libNote = `Library: ${libraryStats.considered.toLocaleString()} maps fit, ${libraryStats.provenOut.toLocaleString()} ruled out by their proven XP ceiling, ${lib.length} simulated${libraryStats.broken ? ` · ceiling broken on ${libraryStats.broken} map${libraryStats.broken === 1 ? '' : 's'}: tell Rai` : ''}`;
         }
         const baseKey = keyOf(queue.entries);
         const base = await evalQ(queue.entries, fresh);
@@ -1802,16 +1809,12 @@ export const mount = (meta, host) => {
         let frontier = [{ entries: queue.entries, steps: [], score: base.score }];
         const all = [];
         for (let step = 1; step <= plan.steps && alive(); step++) {
-          // library maps come best-first: after 4 in a row that don't beat your queue, the rest are skipped (early stop)
-          let libMiss = 0;
           const cands = [];
           for (const f of frontier) for (const mv of movesOf(f.entries)) {
             if (!alive()) break;
             const key = keyOf(mv.entries);
             if (key === baseKey || cands.some(c => c.key === key) || all.some(c => c.key === key)) continue;
-            if (mv.step.kind === 'add' && mv.step.library && libMiss >= 4) continue;
             const ev = await evalQ(mv.entries, fresh);
-            if (mv.step.kind === 'add' && mv.step.library) libMiss = ev.score > f.score * 1.002 ? 0 : libMiss + 1;
             cands.push({ key, entries: mv.entries, steps: [...f.steps, mv.step], score: ev.score, total: ev.total, crossed: ev.crossed, parent: f.score, m: ev.m, end: ev.end });
             s.note = `${plan.steps > 1 ? `Step ${step} of up to ${plan.steps} · ` : ''}${s.done} queues checked`;
             if (step === 1) s.singles = cands.map(c => ({ step: c.steps[0], score: c.score, total: c.total, crossed: c.crossed, why: whyOf(c.m, base.m, c.crossed, base.crossed), end: c.end }));

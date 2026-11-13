@@ -76,10 +76,47 @@ const catalogLen = {};
 const catalogStars = {};
 /** And its keys, mode, note and long-note counts and BPM. */
 const catalogInfo = {};
+// ---------------------------------------------------------------------
+// A proven ceiling on a map's XP, without simulating it: the game's own XP formula (shared
+// rulesets/mania/4k/bots/character.ts factorXP, oss-idle v1.4.3.0) with every factor at its largest.
+// raw = mapXP(share x levelF x scoreF x notesF x lengthF x 1000), then x the skill's multiplier, + the first
+// clear bonus (accuracy), x HR's 1.1 (accuracy). scoreF <= 1.5; mapXP(v) <= 2.001 v (its curve overshoots 1 by
+// about 0.0002); notesF rises with the note count, so the chart's full count bounds it; release can't win a
+// slot without long notes; consistency is capped at 0.33 of the pressure. Memory has no useful bound.
+// ---------------------------------------------------------------------
+const CB_LEVEL = cubicBezier(0, 0.8, 0.4, 1), CB_NOTES = cubicBezier(0.62, 0.16, 0.5, 0.83), CB_LENGTH = cubicBezier(0.2, 0, 0.75, 0);
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const norm = (n, a, b) => (b > a ? clamp01((Math.max(a, Math.min(b, n)) - a) / (b - a)) : (n >= b ? 1 : 0));
+const tr = (n, a, b, c, d) => c + norm(n, a, b) * (d - c);
+const NOTES_KIND = { accuracy: 'high', concentration: 'high', release: 'high', stamina: 'high', coordination: 'high', speed: 'medium', speedjam: 'medium', consistency: 'medium' };
+const notesFactor = (skill, L, notes) => {
+  const kind = NOTES_KIND[skill] || 'low';
+  const [a, b] = kind === 'high' ? [tr(L, 0, 70, 0, 400), tr(L, 20, 100, 800, 1800)] : kind === 'medium' ? [tr(L, 0, 70, 0, 200), tr(L, 0, 100, 300, 1200)] : [tr(L, 0, 70, 0, 20), tr(L, 0, 100, 50, 700)];
+  return CB_NOTES(norm(notes, a, b));
+};
+const levelFactor = (L) => 1 + (1 - CB_LEVEL(clamp01(L / 40))) * 2;
+const lengthFactor = (ms) => 1 + CB_LENGTH(clamp01((ms - 120000) / 180000)) * 2;
+const skillMultiplier = (row, sk) => { const od = num(row[`${sk}Overdrive`]), odM = od <= 0 ? 1 : Math.max(1, Math.min(od, 2.5 * Math.pow(od, Math.log10(2)))); return (1 + 0.1 * num(row[`${sk}Upgrades`]) * odM) * Math.pow(1.1, num(row[`${sk}Prestige`])); };
+/** The most XP a play of map `id` at `rate` can give `skill` (simulator units), or Infinity when it can't be bounded. */
+export const xpCeiling = (row, id, rate, skill, mods = [], everPlayed = true) => {
+  // memory only pays on a map you've played (its progress is 0 at 0 plays); past that it can't be bounded
+  if (skill === 'memory') return everPlayed ? Infinity : 0;
+  const info = catalogInfo[id], len = catalogLen[id];
+  if (!info || !len || !info.objects) return Infinity;
+  const notes = info.objects + num(info.ln), L = num(row[skill]);
+  const share = skill === 'release' ? (num(info.ln) > 0 ? 1 : 0) : skill === 'consistency' ? 0.33 : 1;
+  if (!share) return 0;
+  const v = share * levelFactor(L) * 1.5 * notesFactor(skill, L, notes) * lengthFactor(len * 1000 / rate) * 1000;
+  let xp = 2.001 * v * skillMultiplier(row, skill);
+  if (skill === 'accuracy') { xp += Math.floor(1000 * num(catalogStars[id]) * rate * 1.5); if ((mods || []).includes('HR')) xp *= 1.1; }
+  return xp;
+};
 const PHYSICAL_GOALS = new Set(['speed', 'stamina', 'jackspeed', 'coordination', 'all']);
 /** Maps from the whole library worth simulating for `goal`: every 4K map in the game's catalog (the server's, so
  *  current), without the ones in the queue, the ones harder than you've passed
  *  lately, and the ones that can't give the goal skill anything at all; ranked for the goal, the best `limit`. */
+/** The last library pick: maps considered, and how many were ruled out by their proven ceiling. */
+export const libraryStats = { considered: 0, provenOut: 0, bar: 0, broken: 0 };
 export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods = [], limit = 12, known = new Map() } = {}) {
   const names = await mapNames();
   const skip = new Set(skipIds.map(Number));
@@ -127,6 +164,18 @@ export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods =
   const ratios = scored.filter(m => m.real > 0 && m.guess > 0).map(m => m.real / m.guess).sort((a, b) => a - b);
   const toReal = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
   for (const m of scored) m.score = (m.real ?? m.guess * toReal) * (1 - m.failShare);
+  // proven pruning: a map whose ceiling (most XP a minute it could ever give the goal) is under the best XP a minute
+  // a map has really given (simulated at your levels) can't win, so it isn't simulated at all
+  const ceilOf = (m) => { const minutes = Math.max(0.1, catalogLen[m.id] / rate / 60); const sk = goal === 'all' ? SKILLS : [goal]; return sk.reduce((t, s) => t + xpCeiling(row, m.id, rate, s, mods, everPlayed.has(m.id)), 0) / minutes; };
+  const bar = Math.max(0, ...scored.filter(m => m.real > 0).map(m => m.real));
+  const everPlayed = new Set();
+  try { for (const x of (await gameRows('SELECT DISTINCT beatmapId FROM score WHERE characterId = ?', [row.id])) || []) everPlayed.add(num(x.beatmapId)); } catch (_) { for (const m of scored) everPlayed.add(m.id); }
+  let provenOut = 0;
+  const survivors = scored.filter(m => { if (m.real !== undefined) return true; const c = ceilOf(m); if (c <= bar) { provenOut++; return false; } return true; });
+  // the check that the ceilings hold: no map simulated at your levels may have beaten its own ceiling
+  libraryStats.broken = scored.filter(m => m.real > 0 && m.real > ceilOf(m) * 1.0001).length;
+  libraryStats.provenOut = provenOut; libraryStats.considered = scored.length; libraryStats.bar = bar;
+  scored.length = 0; scored.push(...survivors);
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map(m => ({
     beatmapId: m.id, title: names[m.id], lockedRate: rate, lockedMods: mods, repeat: 1, played: 0, lengthSec: catalogLen[m.id],
     history: { perMin: m.real || 0, plays: 0, stars: m.stars / rate, library: true, fails: m.failShare, known: m.real !== undefined },

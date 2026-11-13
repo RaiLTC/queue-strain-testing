@@ -151,12 +151,14 @@ export const wireSlider = (box, ahead) => {
     ghost.style.left = `${(at.bar * 100).toFixed(2)}%`;
     ghost.style.display = slideSec > 0 ? '' : 'none';
     // while it's on, the forecast arrow and its end line step aside for the ghost needle
-    if (barEl) barEl.classList.toggle('sliding', slideSec > 0);
+    if (barEl && barEl.classList.contains('sliding') !== slideSec > 0) barEl.classList.toggle('sliding', slideSec > 0);
     text.innerHTML = slideSec > 0
       ? `After ${durH(slideSec)}: <b>${Math.round(at.bar * 100)}%</b> · ${STAGES[stageOf(at.bar)][0]}${kept < 0.995 ? ` · <span style="color:${keptColor(kept)}">-${Math.round((1 - kept) * 100)}% physical XP</span>` : ''}`
       : '';
   };
-  input.addEventListener('input', update);
+  // dragging sends many input events: draw once a frame
+  let pending = false;
+  input.addEventListener('input', () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; update(); }); });
   update();
 };
 
