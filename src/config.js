@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.3.557';
-export const VERSION_ID = '2026-11-13 10H02M';
+export const VERSION = '1.3.558';
+export const VERSION_ID = '2026-11-13 11H11M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -41,7 +41,7 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   text: `v${VERSION} · 12 Nov 2026
-• New Suggestions tab: which maps to drop or repeat for more XP
+• New Suggestions tab: drop dead-weight maps, repeat your best ones
 • Levels: follow your routes from Gemini's level up sim
 • Levels: Overall display, next upgrades on the bar
 • Levels update by themselves after an upgrade

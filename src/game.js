@@ -219,18 +219,20 @@ export async function historyMaps(row, skipIds, { days = 7, top = 5, easy = 0 } 
   const cool = all.filter(e => !best.includes(e) && e.history.stars > 0).sort((a, b) => a.history.stars - b.history.stars).slice(0, easy).map(e => ({ ...e, history: { ...e.history, easy: true } }));
   return [...best, ...cool];
 }
-/** The playlist Suggestions writes into: one, overwritten each time. */
-export const SUGGESTED_PLAYLIST = 'Suggested Playlist';
-/** Writes `entries` (queue entries: beatmapId, lockedRate, lockedMods, repeat) into the character's "Suggested
- *  Playlist", creating it the first time and replacing what it held, the way the official sim writes its playlists
- *  (one database write for the lot). Returns whether it was created. */
-export async function writeSuggestedPlaylist(row, entries) {
+
+/** Writes `entries` (queue entries: beatmapId, lockedRate, lockedMods, repeat) into the character's playlist `name`,
+ *  replacing what it held; created when missing, unless `mustExist` (overriding the current playlist). The way the
+ *  official sim writes its playlists: one database write for the lot. Returns whether it was created. */
+export async function writePlaylist(row, name, entries, { mustExist = false } = {}) {
+  const SUGGESTED_PLAYLIST = String(name || '').trim();
+  if (!SUGGESTED_PLAYLIST) throw new Error('Give the playlist a name.');
   const db = window.db;
   if (!db || !db.write) throw new Error('The game has not opened its database yet.');
   const hasChar = num((await gameRows("SELECT COUNT(*) AS n FROM pragma_table_info('playlist') WHERE name = 'characterId'"))?.[0]?.n) > 0;
   const findId = async () => { const r = await gameRows(hasChar ? 'SELECT id FROM playlist WHERE name = ? AND characterId = ? ORDER BY id LIMIT 1' : 'SELECT id FROM playlist WHERE name = ? ORDER BY id LIMIT 1', hasChar ? [SUGGESTED_PLAYLIST, row.id] : [SUGGESTED_PLAYLIST]); return r && r[0] ? num(r[0].id) : undefined; };
   let id = await findId();
   const created = id === undefined;
+  if (created && mustExist) throw new Error(`No saved playlist named "${SUGGESTED_PLAYLIST}" to override.`);
   if (created) {
     await db.write(d => { d.exec(hasChar ? 'INSERT INTO playlist (name, createdAt, characterId) VALUES (?, ?, ?)' : 'INSERT INTO playlist (name, createdAt) VALUES (?, ?)', hasChar ? [SUGGESTED_PLAYLIST, Date.now(), row.id] : [SUGGESTED_PLAYLIST, Date.now()]); });
     id = await findId();
