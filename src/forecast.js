@@ -30,7 +30,7 @@ export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // the answers stop counting, and none counts past a day.
 export const CACHE_KEY = 'queue-strain:sim';
 export const CACHE_TTL_MS = 24 * 3600 * 1000;
-export const CACHE_MAX = 4000;
+export const CACHE_MAX = 30000;
 export let simCache = null;
 export let cacheDirty = false;
 
@@ -44,13 +44,33 @@ export const loadCache = () => {
   } catch (_) { /* a broken cache is an empty one */ }
   return simCache;
 };
+// kept in IndexedDB (a database the game keeps on this computer, sized in gigabytes, not localStorage's 5MB)
+const CACHE_DB = 'queue-strain-cache';
+const cacheDb = () => new Promise((ok, no) => { const q = indexedDB.open(CACHE_DB, 1); q.onupgradeneeded = () => { if (!q.result.objectStoreNames.contains('kv')) q.result.createObjectStore('kv'); }; q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); });
+let cacheLoaded = null;
+/** Loads the stored answers from IndexedDB (once), moving any left in localStorage over and removing them there. */
+export const initCache = () => {
+  if (cacheLoaded) return cacheLoaded;
+  cacheLoaded = (async () => {
+    const map = loadCache(), now = Date.now();
+    try {
+      const db = await cacheDb();
+      const saved = await new Promise((ok) => { const q = db.transaction('kv', 'readonly').objectStore('kv').get('sim'); q.onsuccess = () => ok(q.result || {}); q.onerror = () => ok({}); });
+      db.close();
+      for (const [k, v] of Object.entries(saved.entries || {})) if (v && now - v.at < CACHE_TTL_MS && !map.has(k)) map.set(k, v);
+    } catch (_) {}
+    try { if (localStorage.getItem(CACHE_KEY)) { cacheDirty = true; localStorage.removeItem(CACHE_KEY); } } catch (_) {}
+  })();
+  return cacheLoaded;
+};
 export const saveCache = () => {
   if (!simCache || !cacheDirty) return;
-  // the newest first, up to the cap
-  const entries = [...simCache.entries()].sort((a, b) => b[1].at - a[1].at).slice(0, CACHE_MAX);
+  // the newest first, up to the cap; old ones (past a day) go
+  const now = Date.now();
+  const entries = [...simCache.entries()].filter(([, v]) => now - v.at < CACHE_TTL_MS).sort((a, b) => b[1].at - a[1].at).slice(0, CACHE_MAX);
   simCache = new Map(entries);
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ entries: Object.fromEntries(entries) })); } catch (_) {}
   cacheDirty = false;
+  void cacheDb().then(db => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ entries: Object.fromEntries(entries) }, 'sim'); tx.oncomplete = () => db.close(); tx.onerror = () => db.close(); }).catch(() => {});
 };
 /** What the simulator has already answered about each map at `owner`'s levels (our stored answers): plays, fails
  *  and XP per skill, by map@rate. Free real data for ranking maps without new calls. */
@@ -161,16 +181,68 @@ const playLevelOf = (level, xp, lifetimeXp, prestige = 0) => { const lt = xpGive
 /** How much of a physical skill's level is there to play with, tired and warmed up as it is (shared fatigue.ts). */
 const keptShare = (level, fatigue, warm = 1) => lerp(1, 0.25, fatigue) * lerp(lerp(1, 0.5, Math.min(1, level / 100)), 1, warm);
 const xpToLevel = (level) => { let t = 0; for (let i = 0; i < level; i++) t += xpForLevel(i); return t; };
-const officialLevels = (skills, minutes) => {
+const officialLevels = (skills, minutes, rested = false) => {
+  const restedOnly = rested;
   const fatigue = fatigueLevel(minutes), warm = warmup(minutes, num(skills.stamina && skills.stamina.upgrades));
   return GAME_SKILLS.map((name) => {
     const s = skills[name] || {};
     const rested = playLevelOf(num(s.level), num(s.xp), num(s.lifetime_xp), num(s.prestige));
-    const kept = PHYSICAL.includes(name) ? keptShare(rested, fatigue, warm) : 1;
+    const kept = PHYSICAL.includes(name) && !restedOnly ? keptShare(rested, fatigue, warm) : 1;
     let lv = rested;
     if (kept < 1) { const tired = xpGivesLevel((xpToLevel(num(s.level)) + num(s.xp)) * kept); lv = playLevelOf(tired.level, tired.xp, num(s.lifetime_xp) * kept, num(s.prestige)); }
     return lv < 100 ? Math.round(lv) : Math.round(lv * 2) / 2;
   }).join(',');
+};
+/**
+ * Every play the official sim stored that fits the character now, for the library scan: by map@rate, its XP per
+ * skill (in the simulator's terms) and strain. A record counts for the nine skills other than Speed Jam and Memory
+ * only when all nine levels in its key equal the character's (play levels with no fatigue: at Peak); Speed Jam's
+ * and Memory's XP count from a record whose own two levels equal the character's. Same sim version, under 7 days.
+ */
+export const officialPlaysFor = async (skills, generation, mods, minutes, mapIds, rates, playsOf) => {
+  const out = new Map();
+  const index = await loadOfficial();
+  if (!index.size || !index.db) return out;
+  const mine = officialLevels(skills, minutes, true).split(',');
+  const modsKey = MOD_ORDER.filter(m => (mods || []).includes(m)).join(',');
+  const SJM = [GAME_SKILLS.indexOf('speedjam'), GAME_SKILLS.indexOf('memory')];
+  const rateSet = new Set(rates.map(r => String(r)));
+  const forNine = new Map(), forSjm = new Map();
+  for (const key of index) {
+    const parts = key.split('|');
+    if (parts.length < 5 || parts[2] !== String(generation >= 2 ? 1 : 0)) continue;
+    const [id, rate, mk] = parts[3].split('@');
+    if (mk !== modsKey || !rateSet.has(rate) || !mapIds.has(Number(id))) continue;
+    if (Number(parts[4]) !== (playsOf.get(Number(id)) || 0)) continue;
+    const lv = parts[1].split(',');
+    const mr = `${id}@${rate}`;
+    if (lv.every((v, i) => SJM.includes(i) || v === mine[i])) forNine.set(mr, key);
+    if (SJM.every(i => lv[i] === mine[i])) forSjm.set(mr, key);
+  }
+  const want = [...new Set([...forNine.values(), ...forSjm.values()])];
+  const recs = new Map();
+  await new Promise((ok) => {
+    const st = index.db.transaction('plays', 'readonly').objectStore('plays');
+    let left = want.length;
+    if (!left) ok();
+    for (const k of want) { const q = st.get(k); q.onsuccess = () => { recs.set(k, q.result); if (!--left) ok(); }; q.onerror = () => { if (!--left) ok(); }; }
+  });
+  const mean = (rec, sk) => { const ss = (rec.samples || []).filter(x => x && x.passed !== false); return ss.length ? ss.reduce((t, x) => t + num(x.xp && x.xp[sk]), 0) / ss.length : 0; };
+  const ok = (rec) => rec && num(rec.at) >= Date.now() - OFFICIAL_KEEP_MS && Array.isArray(rec.samples) && rec.samples.length;
+  const ez = (mods || []).includes('EZ') ? 0.5 : 1, hr = (mods || []).includes('HR');
+  for (const [mr, key] of forNine) {
+    const rec = recs.get(key);
+    if (!ok(rec)) continue;
+    const sj = forSjm.get(mr) && recs.get(forSjm.get(mr));
+    const xp = {};
+    for (const sk of GAME_SKILLS) {
+      const src = sk === 'speedjam' || sk === 'memory' ? (ok(sj) ? sj : null) : rec;
+      xp[sk] = src ? mean(src, sk) * ez * (sk === 'accuracy' && hr ? 1.1 : 1) : 0;
+    }
+    const passed = rec.samples.some(x => x && x.passed !== false);
+    out.set(mr, { xp, passed, strained: rec.samples.reduce((t, x) => t + num(x && x.strained), 0) / rec.samples.length });
+  }
+  return out;
 };
 let officialIndex = null;
 const officialValues = new Map();

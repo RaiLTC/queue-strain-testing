@@ -2,7 +2,7 @@
 
 import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { loadLibrary, listsOf, scanLibrary } from '../library.js';
-import { cached, knownMaps, ownerOf, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
+import { initCache, cached, knownMaps, ownerOf, officialStats, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { MINDBLOCK, SKILLS, mapNames, historyMaps, libraryMaps, libraryStats, writeSuggestedPlaylist, SUGGESTED_PLAYLIST, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -535,6 +535,7 @@ export const mount = (meta, host) => {
    *  last result left on screen until the new one is ready. */
   const scan = async (why = '', quick = false) => {
     const token = ++scanToken;
+    await initCache();
     autoPaused = false;
     changedKey = null;
     closeConsole();
@@ -1431,6 +1432,19 @@ export const mount = (meta, host) => {
         <tr><td class="qs-dim">Your queue as it is</td><td class="n qs-dim">${fmt(sg.baseTotal)}</td><td class="n qs-dim">–</td><td></td><td>${sgEnds(sg.baseEnd)}</td></tr>
         ${[...sg.singles].sort((a, b) => b.score - a.score).map(v => `<tr${!v.crossed && (sg.baseCrossed || v.score > sg.base * 1.002) ? '' : ' class="qs-dim"'}><td>${sgText(v.step)}</td><td class="n">${fmt(v.total)}</td><td class="n">${sgPct(v.total, sg.baseTotal)}</td><td class="qs-dim">${esc(v.why)}</td><td>${sgEnds(v.end)}</td></tr>`).join('')}
       </tbody></table></div>` : '';
+    /** The whole-library scan (in Debug: it's run rarely): every catalog map at every allowed rate, its top lists per skill. */
+    const libraryPanel = `<div class="qs-card" style="background:#101018; margin-top:8px;">
+          <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
+            <b>Library</b>
+            ${libScan ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">Scanning: ${libScan.done.toLocaleString()} of ${libScan.total.toLocaleString()} map-rates · ${libScan.skipped.toLocaleString()} ruled out by their XP ceiling · ${libScan.calls.toLocaleString()} simulator calls</span>` : `<button type="button" class="qs-plain qs-lib-run" title="Plays every 4K map in the game's catalog at every rate you allow (your rate range and Speed upgrades), once each at the middle of Peak, on the game's server. Maps that provably can't reach a top list are skipped. Saved for your current levels; a second run only adds what's missing.">${libSaved ? 'Continue / refresh library scan' : 'Scan whole library'}</button>`}
+            ${libSaved ? `<span class="qs-dim">${libSaved.results.length.toLocaleString()} map-rates played${libSaved.at ? `, ${new Date(libSaved.at).toLocaleString()}` : ''}</span>
+              <span class="qs-dim" style="margin-left:auto;">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${SKILLS.map(sk => `<option value="${sk}"${sk === libSkill ? ' selected' : ''}>${SKILL_NAMES[sk]}</option>`).join('')}</select>` : ''}
+          </div>
+          ${libSaved ? (() => { const L = listsOf(libSaved.results)[libSkill]; const f = (medals.ok ? medals.multiplier : 1) * geneOf(libSkill);
+            const col = (title, rows) => `<div style="flex:1; min-width:220px;"><div class="qs-dim" style="margin:6px 0 2px;">${title}</div>${rows.length ? `<ol style="margin:0 0 0 18px; padding:0;">${rows.map(x => `<li title="${esc(x.title)} · ${x.rate}× · ${x.stars.toFixed(2)}★ · strains ${Math.round(x.strained * 100)}% of its length">${esc(x.title)} <span class="qs-dim">${x.rate}×</span> <b>${fmt(x.perMin[libSkill] * f)}</b><span class="qs-dim">/min</span></li>`).join('')}</ol>` : '<div class="qs-dim">None yet.</div>'}</div>`;
+            return `<div style="display:flex; gap:12px; flex-wrap:wrap;">${col('Top 10', L.top)}${col('Top cooldowns (strain falls)', L.cools)}${col('Top warmers (strain rises)', L.warms)}</div>`; })() : ''}
+        </div>
+`;
     const suggestTab = `<div class="qs-card">
         <div class="qs-h">Suggestions</div>
         <div class="qs-dim" style="margin-bottom:6px;">Changes to your queue that would earn more without going past Peak (or, if you allow it, past the XP cut). Estimates from stored simulator answers: apply a change and rescan for the exact numbers.</div>
@@ -1451,17 +1465,6 @@ export const mount = (meta, host) => {
         </div>
         ${sg && sg.error ? `<div style="color:#fca5a5; margin-top:6px;">${esc(sg.error)}</div>` : ''}
         ${sg && !sg.running && sg.timing && sg.timing.forecasts ? (() => { const T = sg.timing, sec = (ms) => `${(ms / 1000).toFixed(2)}s`; return `<div class="qs-dim" style="margin-top:6px; font-size:11px;" title="Where the time went: the forecasts themselves, building the index of stored answers, looking up the nearest stored answer when there's no exact one, and new simulator calls.">Timing: ${T.forecasts} forecasts in ${sec(sg.wall || T.total)} (${(T.forecasts / Math.max(0.001, (sg.wall || T.total) / 1000)).toFixed(1)}/s) · index built ${T.indexBuilds}× ${sec(T.indexMs)} · nearest lookups ${T.near.toLocaleString()} ${sec(T.nearMs)} · exact hits ${T.exact.toLocaleString()} · from the official sim ${T.official.toLocaleString()} · simulator ${T.calls} calls ${sec(T.simMs)} · rest ${sec(Math.max(0, T.total - T.indexMs - T.nearMs - T.simMs))}</div>`; })() : ''}
-        <div class="qs-card" style="background:#101018; margin-top:8px;">
-          <div class="qs-row" style="gap:8px; flex-wrap:wrap;">
-            <b>Library</b>
-            ${libScan ? `<button type="button" class="qs-plain qs-lib-stop">Stop</button><span class="qs-dim">Scanning: ${libScan.done.toLocaleString()} of ${libScan.total.toLocaleString()} map-rates · ${libScan.skipped.toLocaleString()} ruled out by their XP ceiling · ${libScan.calls.toLocaleString()} simulator calls</span>` : `<button type="button" class="qs-plain qs-lib-run" title="Plays every 4K map in the game's catalog at every rate you allow (your rate range and Speed upgrades), once each at the middle of Peak, on the game's server. Maps that provably can't reach a top list are skipped. Saved for your current levels; a second run only adds what's missing.">${libSaved ? 'Continue / refresh library scan' : 'Scan whole library'}</button>`}
-            ${libSaved ? `<span class="qs-dim">${libSaved.results.length.toLocaleString()} map-rates played${libSaved.at ? `, ${new Date(libSaved.at).toLocaleString()}` : ''}</span>
-              <span class="qs-dim" style="margin-left:auto;">Skill</span><select id="qs-lib-skill" style="width:auto; field-sizing:content;">${SKILLS.map(sk => `<option value="${sk}"${sk === libSkill ? ' selected' : ''}>${SKILL_NAMES[sk]}</option>`).join('')}</select>` : ''}
-          </div>
-          ${libSaved ? (() => { const L = listsOf(libSaved.results)[libSkill]; const f = (medals.ok ? medals.multiplier : 1) * geneOf(libSkill);
-            const col = (title, rows) => `<div style="flex:1; min-width:220px;"><div class="qs-dim" style="margin:6px 0 2px;">${title}</div>${rows.length ? `<ol style="margin:0 0 0 18px; padding:0;">${rows.map(x => `<li title="${esc(x.title)} · ${x.rate}× · ${x.stars.toFixed(2)}★ · strains ${Math.round(x.strained * 100)}% of its length">${esc(x.title)} <span class="qs-dim">${x.rate}×</span> <b>${fmt(x.perMin[libSkill] * f)}</b><span class="qs-dim">/min</span></li>`).join('')}</ol>` : '<div class="qs-dim">None yet.</div>'}</div>`;
-            return `<div style="display:flex; gap:12px; flex-wrap:wrap;">${col('Top 10', L.top)}${col('Top cooldowns (strain falls)', L.cools)}${col('Top warmers (strain rises)', L.warms)}</div>`; })() : ''}
-        </div>
         ${sg && sg.libNote && !sg.running ? `<div class="qs-dim" style="margin-top:6px; font-size:11px;">${esc(sg.libNote)}</div>` : ''}
         ${sg && sg.baseCrossed && !sg.running ? `<div style="margin-top:8px; color:#f87171;">Your queue as it is goes past ${sg.pastPeak ? 'the XP cut' : 'Peak'}. The suggestions below keep you ${sg.pastPeak ? 'under the XP cut' : 'within Peak'}.</div>` : ''}
         ${sg && sg.baseEnd && !sg.running ? `<div style="margin-top:8px;"><span class="qs-dim">Your queue as it is, after the next ${sg.hours} hours:</span> ${sgEnds(sg.baseEnd)}</div>` : ''}
@@ -1526,7 +1529,7 @@ export const mount = (meta, host) => {
           <button type="button" class="qs-plain qs-diag-console">Open in console</button></div>
         <div class="qs-diag">${diag.health.map(([k, state, v]) => `<span title="${esc(v)}"><i style="background:${DOT[state]}"></i><b>${k}</b> ${esc(v)}</span>`).join('')}</div>
       </div>`;
-    const debugTab = `${diagPanel}
+    const debugTab = `${diagPanel}${libraryPanel}
       <div class="qs-cols3" style="margin-bottom:10px;">${scanPanel}${calibPanel}${queuePanel}</div>
       <div class="qs-card">
         <div class="qs-row" style="margin-bottom:6px;">
@@ -1698,7 +1701,7 @@ export const mount = (meta, host) => {
     };
     // the library: load what's saved for this character's levels, then draw again with it
     { const key = JSON.stringify([ctx.row.id, SKILLS.map(sk => [ctx.row[sk], ctx.row[`${sk}LifetimeXp`], ctx.row[`${sk}Prestige`], ctx.row[`${sk}Upgrades`]])]);
-      if (libFor !== key) { libFor = key; libSaved = null; void loadLibrary(ctx.row).then(v => { if (v && libFor === key) { libSaved = v; if (activeTab === 'suggest' && lastResult) renderResult(...lastResult); } }); } }
+      if (libFor !== key) { libFor = key; libSaved = null; void loadLibrary(ctx.row).then(v => { if (v && libFor === key) { libSaved = v; if ((activeTab === 'suggest' || activeTab === 'debug') && lastResult) renderResult(...lastResult); } }); } }
     const libSkillSel = outEl.querySelector('#qs-lib-skill');
     if (libSkillSel) libSkillSel.onchange = () => { libSkill = libSkillSel.value; renderResult(...lastResult); };
     const libStop = outEl.querySelector('.qs-lib-stop');
@@ -1713,7 +1716,7 @@ export const mount = (meta, host) => {
       let drawn = 0;
       try {
         await scanLibrary({ api: ctx.api, row: ctx.row, rates, mods: ctx.mods, minutes, stopped: () => !libScan || libScan.stop,
-          onProgress: (pr) => { Object.assign(libScan, pr); if (Date.now() - drawn > 700 && activeTab === 'suggest' && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
+          onProgress: (pr) => { Object.assign(libScan, pr); if (Date.now() - drawn > 700 && activeTab === 'debug' && lastResult) { drawn = Date.now(); renderResult(...lastResult); } } });
       } catch (e) { logProblem('library', e); }
       libSaved = await loadLibrary(ctx.row);
       libScan = null;
