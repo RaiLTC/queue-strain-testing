@@ -8,7 +8,7 @@ import { logPerf, perfLog, rateSteps, waitingText, watchFrames } from '../game.j
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
-import { readRoutes, routeCumXp, simulateRoute } from '../rules/routes.js';
+import { readRoutes, routeCumXp, routeFor, simulateRoute } from '../rules/routes.js';
 import { LOG_READ_KEY, MATCH_HELP, NOTICE_READ_KEY, SKILL_NAMES, SKILL_SHORT, STAGE_COLOR, TABS, arrows, barHtml, changelogHtml, clock, hotfixHtml, hotfixId, HOTFIX_READ_KEY, dur, durH, durWords, esc, fmt, graphHtml, logId, matchColor, matchText, minText, noticeHtml, noticeId, shortTime, unitsHtml, wireSlider } from './parts.js';
 import { CSS } from './style.js';
 
@@ -1160,7 +1160,7 @@ export const mount = (meta, host) => {
         // following the route: the upgrades bought on the way, and each play's XP scaled by what they add
         const gene = genetics[sk];
         const sim = routeView ? simulateRoute({ plays: r.plays, gainOf: p => xpOf(p, sk), L0, x0, upgrades: num(row0[`${sk}Upgrades`]), overdrive: num(row0[`${sk}Overdrive`]),
-          prestige, route: routesAll[prestige] || [], odPct: gene ? 5 * num(gene.odGene) * num(gene.strength) : 0, need: 100 + prestige, basePerH: perHour(p => xpOf(p, sk)), spanSec }) : null;
+          prestige, route: routeFor(routesAll, sk, prestige), odPct: gene ? 5 * num(gene.odGene) * num(gene.strength) : 0, need: 100 + prestige, basePerH: perHour(p => xpOf(p, sk)), spanSec }) : null;
         const gainOf = sim ? (p) => xpOf(p, sk) * (sim.ratioOf.get(p) ?? 1) : (p) => xpOf(p, sk);
         let x;
         if (lifetimeView) {

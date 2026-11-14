@@ -28,6 +28,8 @@ export const routeUpgradeMult = (upgrades, overdrive) => 1 + 0.1 * upgrades * ro
 
 /** The saved routes: for each prestige, the levels to buy upgrades #1, #2 ... at (every skill at that prestige
  *  follows the same one). Null when the route add-on isn't installed; {} when it is but has no routes. */
+/** A skill's route at a prestige: its own where it has one, else the All skills one (as the route add-on does). */
+export const routeFor = (routes, skill, prestige) => (routes && routes.bySkill && routes.bySkill[skill] && routes.bySkill[skill][prestige]) || (routes && routes[prestige]) || [];
 export const readRoutes = () => {
   let raw = null;
   try { raw = localStorage.getItem(ROUTES_KEY); } catch (_) {}
@@ -43,11 +45,14 @@ export const readRoutes = () => {
       const own = routes[saved.skill];
       routes = own && typeof own === 'object' && filled(own) ? own : sets.sort((a, b) => filled(b) - filled(a))[0];
     }
-    for (const [prestige, text] of Object.entries(routes)) {
-      if (typeof text !== 'string') continue;
-      const levels = text.split(',').map(v => parseFloat(v.trim())).filter(n => !isNaN(n));
-      if (levels.length) out[prestige] = levels;
+    const parse = (text) => (typeof text === 'string' ? text.split(',').map(v => parseFloat(v.trim())).filter(n => !isNaN(n)) : []);
+    for (const [prestige, text] of Object.entries(routes)) { const levels = parse(text); if (levels.length) out[prestige] = levels; }
+    // each skill's own routes (the route add-on's Fill skill / Fill to skill): kept beside the All skills ones
+    const bySkill = {};
+    for (const [skill, set] of Object.entries(saved.skillRoutes && typeof saved.skillRoutes === 'object' ? saved.skillRoutes : {})) {
+      for (const [prestige, text] of Object.entries(set || {})) { const levels = parse(text); if (levels.length) (bySkill[skill] = bySkill[skill] || {})[prestige] = levels; }
     }
+    Object.defineProperty(out, 'bySkill', { value: bySkill });
   } catch (_) {}
   return out;
 };
