@@ -1,7 +1,7 @@
 // The forecast: simulating the queue play by play, the cache, calibration and the local estimate.
 
 import { SETTINGS } from './config.js';
-import { MINDBLOCK, RECENT_LIMIT, SKILLS, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
+import { MINDBLOCK, RECENT_LIMIT, SKILLS, allowedRate, rateAllowed, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
 import { LEAD_IN_MS, PHYSICAL, STRAIN_CAP, afterPlay, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, lerp, restedFatigue, warmup, warmupTrend, xpForLevel } from './rules/fatigue.js';
 import { DAY_MS, geneticsXpOf, recall } from './rules/genes.js';
 import { scanToken } from './ui/window.js';
@@ -548,7 +548,9 @@ export async function calibrate(row, queue, { startMinutes, rate, triesOffset = 
       }
       const r = num(x.rate) || 1;
       const m = String(x.mods || '').split(',').map(v => v.trim()).filter(Boolean);
+      if (!rateAllowed(r, row)) { out.skippedRates = (out.skippedRates || 0) + 1; continue; }
       const answer = await simulateAs(id, r, m, startMinutes, tries, levelsThen);
+      if (!answer || answer.rejected) { out.skippedRejected = (out.skippedRejected || 0) + 1; continue; }
       const sim = answer.xp || {};
       const recentThen = recentPlaysOf(allPlays, id, at);
       const block = mindblockFactor(recentThen);
@@ -672,7 +674,7 @@ export async function forecast(queue, ctx, onProgress, token) {
    *  from the cache, from a call already on its way, or with a new call in its turn. */
   /** One run: a play is random, so each run is asked for and kept on its own (run 0 as before runs existed). */
   /** Diagnostics: the simulator's calls this scan: time spent, the slowest, busy answers retried, failures. */
-  const simStats = { ms: 0, slowest: 0, busy: 0, failed: 0 };
+  const simStats = { ms: 0, slowest: 0, busy: 0, failed: 0, rejected: 0 };
   /** Where a forecast's time goes (for the Suggestions' timing line): exact cache hits, building the index of
    *  stored answers, nearest-answer lookups, new simulator calls. */
   const timing = { exact: 0, official: 0, indexMs: 0, indexBuilds: 0, nearMs: 0, near: 0, calls: 0, reused: 0 };
@@ -737,7 +739,15 @@ export async function forecast(queue, ctx, onProgress, token) {
       // a call that failed for good is asked again next time, not kept as failed
       asks.get(askKey).catch(() => asks.delete(askKey));
     }
-    return { answer: await asks.get(askKey), fresh };
+    try {
+      return { answer: await asks.get(askKey), fresh };
+    } catch (e) {
+      if (runToken !== scanToken || /stopped/.test(String(e && e.message))) throw e;
+      simStats.rejected = (simStats.rejected || 0) + 1;
+      if (!approxIndex) approxIndex = answerIndex(num(row.id));
+      const near = nearestAnswer(approxIndex, asOwner, beatmapId, r, m, bucket, playsKey, run || 0);
+      return { answer: near ? { ...near, rejected: true } : { passed: true, strained_minutes: 0, xp: {}, rejected: true }, fresh: false, approx: true };
+    }
   };
   /** Ask the simulator about one play, `runs` times, and average the answers. */
   const runs = Math.min(5, Math.max(1, Math.round(num(ctx.runs)) || 1));
@@ -755,12 +765,13 @@ export async function forecast(queue, ctx, onProgress, token) {
       fail_seconds: fails.length ? mean(fails.map(a => num(a.fail_seconds))) : undefined,
       fail_progress: fails.length ? mean(fails.map(a => num(a.fail_progress))) : undefined,
       xp,
+      rejected: answers.some(a => a.rejected) || undefined,
     };
     return { answer, fresh: got.some(g => g.fresh), approx: got.some(g => g.approx) };
   };
   /** The simulator's answer for a play of the queue, and how it was got: `fresh` when this call went to the simulator. */
   const simulateWith = async (entry, minutes, mapPlays, exact = false) => {
-    const r = entry.lockedRate ?? rate;
+    const r = allowedRate(entry.lockedRate ?? rate, row);
     const m = entry.lockedRate === undefined ? mods : (entry.lockedMods || []);
     const bucket = Math.min(STRAIN_CAP, strainStep(minutes));
     const playsKey = exact ? Math.max(0, Math.round(mapPlays)) : playStep(mapPlays);

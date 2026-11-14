@@ -4,7 +4,7 @@ import { SETTINGS, TEXT, VERSION, VERSION_ID, tx } from '../config.js';
 import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
 import { pool } from '../forecast.js';
 import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, sharedStats, SHARED_CACHE_URL, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
-import { logPerf, perfLog, waitingText, watchFrames } from '../game.js';
+import { logPerf, perfLog, rateSteps, waitingText, watchFrames } from '../game.js';
 import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
@@ -1708,8 +1708,7 @@ export const mount = (meta, host) => {
     if (libStopBtn) libStopBtn.onclick = () => { if (libRun) libRun.stop = true; };
     const libRunBtn = outEl.querySelector('.qs-lib-run');
     if (libRunBtn) libRunBtn.onclick = async () => {
-      const speedUps = num(ctx.row.speedUpgrades), lo = Math.max(0.5, 1 - 0.05 * speedUps), hi = Math.min(1.5, 1 + 0.05 * speedUps);
-      const rates = []; for (let x = Math.round(lo * 20); x <= Math.round(hi * 20); x++) rates.push(Math.round(x * 5) / 100);
+      const rates = rateSteps(ctx.row);
       const k = r.knots || [], minutes = k.length > 2 ? (num(k[1]) + num(k[2])) / 2 : 120;
       libRun = { phase: 'Starting', calls: 0, stop: false };
       renderResult(...lastResult);

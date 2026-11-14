@@ -9,6 +9,15 @@ import { DAY_MS, asGenetics, recall } from './rules/genes.js';
 export const SKILLS = ['accuracy', 'speed', 'stamina', 'jackspeed', 'coordination', 'release', 'reading', 'consistency', 'concentration', 'speedjam', 'memory'];
 export const num = (v) => (typeof v === 'number' ? v : Number(v) || 0);
 
+// ---- the speeds a character may play at (shared rate.ts): a 0.05 step each way per Speed upgrade, plus one per
+// Speed prestige (kept for good), within 0.5-1.5. The game holds a queue's speed to these: snapped to 0.05, clamped ----
+const r2 = (v) => Math.round(v * 100) / 100;
+export const rateUnlocks = (row) => Math.max(0, num(row && row.speedUpgrades) + num(row && row.speedPrestige));
+export const rateRange = (row) => { const u = rateUnlocks(row) * 0.05; return { lo: r2(Math.max(0.5, 1 - u)), hi: r2(Math.min(1.5, 1 + u)) }; };
+export const allowedRate = (rate, row) => { const { lo, hi } = rateRange(row); return r2(Math.min(hi, Math.max(lo, Math.round(num(rate || 1) / 0.05) * 0.05))); };
+export const rateAllowed = (rate, row) => Math.abs(allowedRate(rate, row) - num(rate || 1)) < 1e-6;
+export const rateSteps = (row) => { const { lo, hi } = rateRange(row), out = []; for (let x = Math.round(lo * 20); x <= Math.round(hi * 20); x++) out.push(r2(x / 20)); return out; };
+
 // ---- performance: what the add-on did and how long it took (Copy Diagnostics), and what it's waiting for ----
 /** The last 300 events: scans, Suggestions steps, the library, waits, timeouts, stalls, frames the game lost. */
 export const perfLog = [];
