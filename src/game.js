@@ -16,6 +16,27 @@ export const rateUnlocks = (row) => Math.max(0, num(row && row.speedUpgrades) + 
 export const rateRange = (row) => { const u = rateUnlocks(row) * 0.05; return { lo: r2(Math.max(0.5, 1 - u)), hi: r2(Math.min(1.5, 1 + u)) }; };
 export const allowedRate = (rate, row) => { const { lo, hi } = rateRange(row); return r2(Math.min(hi, Math.max(lo, Math.round(num(rate || 1) / 0.05) * 0.05))); };
 export const rateAllowed = (rate, row) => Math.abs(allowedRate(rate, row) - num(rate || 1)) < 1e-6;
+/** A simulator request held to what the server accepts (server api/simulate.ts): the speed allowed by the Speed
+ *  upgrades and prestiges sent, known mods only (EZ/HR, and NF/SD/PF/JT, one of each), strain 0-420 minutes, whole
+ *  map plays and levels (0-1000), XP not below 0, a skill's upgrades at most 10 + its prestige. */
+const SIM_MODS = ['EZ', 'NF', 'HR', 'SD', 'PF', 'JT'];
+export const simRequest = (body) => {
+  const int = (v, max) => Math.max(0, Math.min(max, Math.round(num(v))));
+  const skills = {};
+  for (const [sk, s] of Object.entries(body.skills || {})) {
+    const prestige = int(s.prestige, 1000);
+    skills[sk] = { level: int(Math.floor(num(s.level)), 1000), xp: Math.max(0, num(s.xp)), lifetime_xp: Math.max(0, num(s.lifetime_xp)), prestige, upgrades: Math.min(int(s.upgrades, 1000), 10 + prestige), overdrive: Math.max(0, num(s.overdrive)) };
+  }
+  const sp = skills.speed || {};
+  const mods = [];
+  for (const m of (body.mods || []).map(x => String(x).trim().toUpperCase())) {
+    if (!SIM_MODS.includes(m) || mods.includes(m)) continue;
+    if ((m === 'EZ' && mods.includes('HR')) || (m === 'HR' && mods.includes('EZ'))) continue;
+    if (['NF', 'SD', 'PF', 'JT'].includes(m) && mods.some(x => ['NF', 'SD', 'PF', 'JT'].includes(x))) continue;
+    mods.push(m);
+  }
+  return { ...body, rate: allowedRate(body.rate, { speedUpgrades: sp.upgrades, speedPrestige: sp.prestige }), mods, generation: Math.max(1, int(body.generation, 1000)), strain_minutes: Math.max(0, Math.min(420, num(body.strain_minutes))), map_plays: int(body.map_plays, 1000000), skills };
+};
 export const rateSteps = (row) => { const { lo, hi } = rateRange(row), out = []; for (let x = Math.round(lo * 20); x <= Math.round(hi * 20); x++) out.push(r2(x / 20)); return out; };
 
 // ---- performance: what the add-on did and how long it took (Copy Diagnostics), and what it's waiting for ----

@@ -4,7 +4,7 @@
 // and one that no longer makes the 15 gives its place to the next best, confirmed in turn. Kept on this computer
 // (IndexedDB) for the character's current levels.
 
-import { SKILLS, catalogEntries, gameRows, logProblem, num, withTimeout } from './game.js';
+import { SKILLS, catalogEntries, gameRows, logProblem, num, simRequest, withTimeout } from './game.js';
 import { CALL_SPACING_MS, RETRY_WAITS_MS, callSlot, pauseCalls, pool, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sharedPlaysFor, sleep, strainStep } from './forecast.js';
 import { STRAIN_CAP } from './rules/fatigue.js';
 
@@ -84,7 +84,7 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
     let answer = cached(owner, key);
     for (let attempt = 0; !answer && !stopped(); attempt++) {
       await callSlot();
-      try { answer = await withTimeout(api.simulate({ beatmap_id: id, rate, mods, generation: num(row.generation) || 1, strain_minutes: bucket, map_plays: p, skills }), 20000, 'a simulator call'); calls++; remember(owner, key, answer); }
+      try { answer = await withTimeout(api.simulate(simRequest({ beatmap_id: id, rate, mods, generation: num(row.generation) || 1, strain_minutes: bucket, map_plays: p, skills })), 20000, 'a simulator call'); calls++; remember(owner, key, answer); }
       catch (e) { if (attempt >= RETRY_WAITS_MS.length || !isTransient(e)) { logProblem('library', `map ${id}: ${e && e.message ? e.message : e}`); break; } pauseCalls(RETRY_WAITS_MS[attempt]); }
     }
     if (!answer) return;

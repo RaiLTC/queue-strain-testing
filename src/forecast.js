@@ -1,7 +1,7 @@
 // The forecast: simulating the queue play by play, the cache, calibration and the local estimate.
 
 import { SETTINGS } from './config.js';
-import { MINDBLOCK, RECENT_LIMIT, SKILLS, allowedRate, rateAllowed, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
+import { MINDBLOCK, RECENT_LIMIT, SKILLS, allowedRate, rateAllowed, simRequest, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
 import { LEAD_IN_MS, PHYSICAL, STRAIN_CAP, afterPlay, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, lerp, restedFatigue, warmup, warmupTrend, xpForLevel } from './rules/fatigue.js';
 import { DAY_MS, geneticsXpOf, recall } from './rules/genes.js';
 import { scanToken } from './ui/window.js';
@@ -705,10 +705,10 @@ export async function forecast(queue, ctx, onProgress, token) {
         for (let attempt = 0; ; attempt++) {
           const t0 = performance.now();
           try {
-            answer = await withTimeout(api.simulate({
+            answer = await withTimeout(api.simulate(simRequest({
               beatmap_id: beatmapId, rate: r, mods: m, generation: num(row.generation) || 1,
               strain_minutes: bucket, map_plays: playsKey, skills: asSkills,
-            }), 20000, 'a simulator call');
+            })), 20000, 'a simulator call');
             const ms = performance.now() - t0;
             simStats.ms += ms;
             simStats.slowest = Math.max(simStats.slowest, ms);
