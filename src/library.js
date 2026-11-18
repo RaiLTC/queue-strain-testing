@@ -4,7 +4,7 @@
 // and one that no longer makes the 15 gives its place to the next best, confirmed in turn. Kept on this computer
 // (IndexedDB) for the character's current levels.
 
-import { SKILLS, catalogEntries, gameRows, logProblem, num, simRequest, withTimeout } from './game.js';
+import { SKILLS, catalogEntries, gameRows, is4kPlay, logProblem, num, simRequest, withTimeout } from './game.js';
 import { CALL_SPACING_MS, RETRY_WAITS_MS, callSlot, pauseCalls, pool, cached, initCache, isTransient, knownMaps, officialPlaysFor, ownerOf, remember, sharedPlaysFor, sleep, strainStep } from './forecast.js';
 import { STRAIN_CAP } from './rules/fatigue.js';
 
@@ -62,6 +62,7 @@ export async function buildLibrary({ api, row, rates, mods = [], minutes, bonus 
     const rows = (await gameRows('SELECT x.beatmapId AS id, x.gains AS gains, s.rate AS rate FROM score_xp x LEFT JOIN score s ON s.id = x.scoreId WHERE x.characterId = ? AND x.playedAt >= ?', [row.id, Date.now() - 14 * 86400000])) || [];
     const sum = new Map();
     for (const x of rows) {
+      if (!is4kPlay(x.id, x.gains)) continue;
       const mr = `${num(x.id)}@${Math.round((num(x.rate) || 1) * 100) / 100}`;
       let g = {}; try { g = JSON.parse(x.gains || '{}') || {}; } catch (_) {}
       const m = sum.get(mr) || { n: 0, xp: {} };

@@ -138,6 +138,15 @@ const catalogLen = {};
 const catalogStars = {};
 /** And its keys, mode, note and long-note counts and BPM. */
 const catalogInfo = {};
+/** Whether a play was 4K (this add-on is 4K only; since 7K came out, the game's plays mix both): its map in the
+ *  catalogue is a 4K mania map, or, for a map the catalogue doesn't know, it gave no XP to a skill 4K doesn't have. */
+export const is4kPlay = (beatmapId, gains) => {
+  const info = catalogInfo[num(beatmapId)];
+  if (info) return info.mode === 3 && info.keys === 4;
+  let g = gains;
+  if (typeof g === 'string') { try { g = JSON.parse(g || '{}'); } catch (_) { g = {}; } }
+  return !Object.keys(g || {}).some(sk => num(g[sk]) > 0 && !SKILLS.includes(sk));
+};
 // ---------------------------------------------------------------------
 // A proven ceiling on a map's XP, without simulating it: the game's own XP formula (shared
 // rulesets/mania/4k/bots/character.ts factorXP, oss-idle v1.4.3.0) with every factor at its largest.
@@ -192,7 +201,7 @@ export async function libraryMaps(row, skipIds, { goal = 'all', rate = 1, mods =
   let hardest = 0;
   try {
     const rows = (await gameRows('SELECT beatmapId, rate FROM score WHERE characterId = ? AND playedAt >= ?', [row.id, Date.now() - 30 * DAY_MS])) || [];
-    for (const x of rows) hardest = Math.max(hardest, num(catalogStars[num(x.beatmapId)]) * (num(x.rate) || 1));
+    for (const x of rows) if (is4kPlay(x.beatmapId)) hardest = Math.max(hardest, num(catalogStars[num(x.beatmapId)]) * (num(x.rate) || 1));
   } catch (_) {}
   const cap = hardest > 0 ? hardest * 1.05 : Infinity;
   // your real fails lately, per map: a map you often fail is worth less than its XP says
@@ -262,7 +271,7 @@ export async function historyMaps(row, skipIds, { days = 7, top = 5, easy = 0 } 
   const byMap = new Map();
   for (const x of rows) {
     const id = num(x.id);
-    if (!id || skip.has(id) || !catalogLen[id]) continue;
+    if (!id || skip.has(id) || !catalogLen[id] || !is4kPlay(id, x.gains)) continue;
     let xp = 0;
     try { const g = JSON.parse(x.gains || '{}'); for (const v of Object.values(g || {})) xp += num(v); } catch (_) {}
     const m = byMap.get(id) || { id, rate: num(x.rate) || 1, mods: x.mods, xp: 0, n: 0 };

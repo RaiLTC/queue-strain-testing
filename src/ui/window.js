@@ -5,7 +5,7 @@ import { LIBRARY_TOP, buildLibrary, loadLibrary } from '../library.js';
 import { pool } from '../forecast.js';
 import { initCache, cached, knownMaps, ownerOf, officialStats, officialPlaysFor, sharedStats, SHARED_CACHE_URL, forecast, localPlaysOf, modsText, parseGains, saveCache, svCurves } from '../forecast.js';
 import { logPerf, perfLog, rateSteps, waitingText, watchFrames } from '../game.js';
-import { MINDBLOCK, SKILLS, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
+import { MINDBLOCK, SKILLS, is4kPlay, mapNames, catalogEntries, writePlaylist, diagLog, gameRows, geneticsFor, logProblem, movedOn, num, queueKey, readQueue, setting } from '../game.js';
 import { BAR_ZONES, STAGES, STRAIN_CAP, XP_CUT, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, levelOf, stageOf, warmup, xpForLevel } from '../rules/fatigue.js';
 import { fatigueGenesOf } from '../rules/genes.js';
 import { readRoutes, routeCumXp, routeFor, simulateRoute } from '../rules/routes.js';
@@ -1673,6 +1673,7 @@ export const mount = (meta, host) => {
       } catch (e) {
         note = `The game keeps no per-play XP here (${e && e.message ? e.message : e}).`;
       }
+      rows = rows.filter(x => is4kPlay(x.beatmapId, x.gains));
       const ats = rows.map(x => num(x.playedAt));
       const played = rows.map(x => {
         const g = parseGains(x.gains);

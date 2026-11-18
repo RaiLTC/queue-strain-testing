@@ -11,8 +11,8 @@
 
 // What you edit for a release: the version, the notice, the changelog, settings and every text players see.
 
-export const VERSION = '1.4.08';
-export const VERSION_ID = '2026-11-14 06H36M';
+export const VERSION = '1.4.09';
+export const VERSION_ID = '2026-11-18 08H10M';
 
 // none / info / urgent
 export const NOTICE = {
@@ -45,12 +45,13 @@ export const CHANGELOG = {
 export const HOTFIXES = {
   id: VERSION_ID,
   notify: true,
-  text: `v${VERSION} · 13 Nov 2026
+  text: `v${VERSION} · 18 Nov 2026
 • Fixed memory building up while scanning, which could slow or crash the game
 • Suggestions: checks its pick exactly, XP comparison, progress bar and Stop button
 • Faster scans and Suggestions
 • Smoother while finding suggestions; shows what it's waiting for
-• Fixed scans stopping on a speed you can't use (after a Speed prestige)`,
+• Fixed scans stopping on a speed you can't use (after a Speed prestige)
+• Leaves out 7K plays: Suggestions no longer picks 7K maps`,
 };
 
 // ---------------------------------------------------------------------

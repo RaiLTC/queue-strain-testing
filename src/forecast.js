@@ -1,7 +1,7 @@
 // The forecast: simulating the queue play by play, the cache, calibration and the local estimate.
 
 import { SETTINGS } from './config.js';
-import { MINDBLOCK, RECENT_LIMIT, SKILLS, allowedRate, rateAllowed, simRequest, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
+import { MINDBLOCK, RECENT_LIMIT, SKILLS, is4kPlay, allowedRate, rateAllowed, simRequest, clearWaiting, fetchT, logPerf, setWaiting, withTimeout, gameRows, logProblem, medalsOf, memoryPlays, mindblockFactor, num, playsSince, recentPlaysOf, serverTries } from './game.js';
 import { LEAD_IN_MS, PHYSICAL, STRAIN_CAP, afterPlay, barKnots, barOf, fatigueLevel, fatigueXp, gainLevels, lerp, restedFatigue, warmup, warmupTrend, xpForLevel } from './rules/fatigue.js';
 import { DAY_MS, geneticsXpOf, recall } from './rules/genes.js';
 import { scanToken } from './ui/window.js';
@@ -508,7 +508,9 @@ export async function calibrate(row, queue, { startMinutes, rate, triesOffset = 
   const out = { plays: 0, factors: {}, real: {}, sim: {}, n: {}, low: {}, high: {}, conf: {}, ignored: {}, detail: [] };
   let recent;
   try {
-    recent = await gameRows('SELECT playedAt, gains FROM score_xp WHERE characterId = ? AND playedAt >= ? ORDER BY playedAt DESC', [row.id, since]);
+    recent = await gameRows('SELECT playedAt, beatmapId, gains FROM score_xp WHERE characterId = ? AND playedAt >= ? ORDER BY playedAt DESC', [row.id, since]);
+    // 4K plays only: 7K XP goes to skills of the same names, and would count against the 4K levels
+    if (recent) recent = recent.filter(x => is4kPlay(x.beatmapId, x.gains));
   } catch (_) { return out; /* an older game keeps no gains */ }
   if (!recent || !recent.length) return out;
   const recentGains = recent.map(x => ({ at: num(x.playedAt), gains: parseGains(x.gains) }));
